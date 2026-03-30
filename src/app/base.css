@@ -1,0 +1,54 @@
+html {
+  min-height: 100%;
+  background: var(--app-page-background);
+  color-scheme: light;
+  --app-page-background: var(--p-surface-50);
+  --app-page-background-elevated: var(--p-surface-0);
+  --app-page-background-muted: var(--p-surface-100);
+  --app-page-background-strong: var(--p-surface-200);
+  --app-page-heading-color: var(--p-text-color);
+  --app-panel-background: var(--p-surface-0);
+  --app-panel-background-soft: color-mix(in srgb, var(--p-surface-0) 78%, var(--p-surface-100));
+  --app-panel-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+  --app-card-subtle-background: color-mix(in srgb, var(--p-surface-0) 88%, var(--p-primary-color) 2%);
+  --app-provider-odontoprev-color: var(--p-blue-500);
+  --app-provider-hapvida-color: var(--p-green-500);
+  --app-provider-sulamerica-color: var(--p-orange-500);
+  --app-success-color: var(--p-green-500);
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  background: var(--app-page-background);
+  color: var(--p-text-color);
+  font-family: var(--p-font-family);
+}
+
+html.app-dark {
+  background: var(--app-page-background);
+  color-scheme: dark;
+  --app-page-background: var(--p-surface-950);
+  --app-page-background-elevated: var(--p-surface-900);
+  --app-page-background-muted: var(--p-surface-900);
+  --app-page-background-strong: var(--p-surface-800);
+  --app-page-heading-color: var(--p-surface-0);
+  --app-panel-background: var(--p-surface-900);
+  --app-panel-background-soft: color-mix(in srgb, var(--p-surface-900) 82%, var(--p-surface-800));
+  --app-panel-shadow: 0 16px 36px rgba(0, 0, 0, 0.24);
+  --app-card-subtle-background: color-mix(in srgb, var(--p-surface-800) 92%, var(--p-primary-color) 8%);
+  --app-provider-odontoprev-color: var(--p-blue-300);
+  --app-provider-hapvida-color: var(--p-green-300);
+  --app-provider-sulamerica-color: var(--p-orange-300);
+  --app-success-color: var(--p-green-300);
+}
+
+#app {
+  min-height: 100vh;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}

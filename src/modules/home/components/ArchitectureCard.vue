@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import Tag from 'primevue/tag'
+
+import { AppCard } from '@/shared/ui'
+
 defineProps<{
   title: string
   description: string
@@ -7,43 +11,30 @@ defineProps<{
 </script>
 
 <template>
-  <article class="architecture-card">
-    <p class="path">{{ path }}</p>
-    <h2>{{ title }}</h2>
-    <p>{{ description }}</p>
-  </article>
+  <AppCard>
+    <template #content>
+      <div class="architecture-card">
+        <Tag :value="path" rounded />
+        <h2>{{ title }}</h2>
+        <p>{{ description }}</p>
+      </div>
+    </template>
+  </AppCard>
 </template>
 
 <style scoped>
 .architecture-card {
-  border: 1px solid #d8dee9;
-  border-radius: 20px;
-  padding: 1.25rem;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(245, 247, 250, 0.96) 100%);
-  box-shadow: 0 16px 40px -28px rgba(15, 23, 42, 0.35);
+  display: grid;
+  gap: 0.9rem;
 }
 
 .architecture-card h2 {
   margin: 0 0 0.75rem;
   font-size: 1.1rem;
-  color: #102a43;
 }
 
 .architecture-card p {
   margin: 0;
-  color: #486581;
   line-height: 1.6;
-}
-
-.path {
-  display: inline-flex;
-  margin-bottom: 0.9rem;
-  padding: 0.3rem 0.65rem;
-  border-radius: 999px;
-  background: #e0f2fe;
-  color: #075985;
-  font-size: 0.85rem;
-  font-weight: 700;
 }
 </style>

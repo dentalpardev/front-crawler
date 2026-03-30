@@ -1,0 +1,6 @@
+export {
+  authRoutes,
+  FORGOT_PASSWORD_ROUTE_NAME,
+  LOGIN_ROUTE_NAME,
+  REGISTER_ROUTE_NAME,
+} from './routes'

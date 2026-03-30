@@ -9,6 +9,7 @@ export const homeRoutes: RouteRecordRaw[] = [
     component: () => import('./pages/HomePage.vue'),
     meta: {
       module: 'home',
+      requiresAuth: true,
     },
   },
 ]
