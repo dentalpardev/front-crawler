@@ -1,73 +1,160 @@
-# front-crawler
+# Dentalpar Frontend
 
-This template should help get you started developing with Vue 3 in Vite.
+Frontend da plataforma de busca odontológica da Dentalpar.
 
-## Recommended IDE Setup
+O projeto permite autenticação com JWT, busca de dentistas por cidade e UF, seleção de um ou múltiplos providers e acompanhamento do processamento assíncrono do backend até a exibição dos resultados.
 
-[VS Code](https://code.visualstudio.com/) + [Vue (Official)](https://marketplace.visualstudio.com/items?itemName=Vue.volar) (and disable Vetur).
+## Stack
 
-## Recommended Browser Setup
+- Vue 3 + TypeScript
+- Vite
+- PrimeVue 4 em `styled mode`
+- Tema `Aura` com `primary` blue e `surface` gray
+- Pinia
+- Vue Router
+- Vitest
+- Playwright
 
-- Chromium-based browsers (Chrome, Edge, Brave, etc.):
-  - [Vue.js devtools](https://chromewebstore.google.com/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd)
-  - [Turn on Custom Object Formatter in Chrome DevTools](http://bit.ly/object-formatters)
-- Firefox:
-  - [Vue.js devtools](https://addons.mozilla.org/en-US/firefox/addon/vue-js-devtools/)
-  - [Turn on Custom Object Formatter in Firefox DevTools](https://fxdx.dev/firefox-devtools-custom-object-formatters/)
+## Principais Fluxos
 
-## Type Support for `.vue` Imports in TS
+- Login e cadastro integrados ao backend
+- Rotas protegidas com guard de autenticação
+- Busca por cidade + UF
+- Seleção de um provider para execução via `job`
+- Seleção de múltiplos providers para execução via `batch`
+- Polling de status até conclusão
+- Listagem dos dentistas retornados pela API
+- Exportação dos resultados em CSV
+- Suporte a light mode e dark mode com tokens do tema do PrimeVue
 
-TypeScript cannot handle type information for `.vue` imports by default, so we replace the `tsc` CLI with `vue-tsc` for type checking. In editors, we need [Volar](https://marketplace.visualstudio.com/items?itemName=Vue.volar) to make the TypeScript language service aware of `.vue` types.
+## Tema e UI
 
-## Customize configuration
+O projeto usa PrimeVue da forma nativa recomendada:
 
-See [Vite Configuration Reference](https://vite.dev/config/).
+- `styled mode`
+- preset `Aura`
+- `inputVariant: 'filled'`
+- `darkModeSelector: '.app-dark'`
+- customização de design tokens em [src/app/primevue.ts](/home/gabrielayala/Workspace/Advize/front-crawler/src/app/primevue.ts)
 
-## Project Setup
+## Estrutura
+
+```text
+src/
+  app/         bootstrap da aplicação, router, tema e shell
+  modules/
+    auth/      autenticação, páginas públicas e store de sessão
+    home/      busca, integração com crawlers/jobs/batches e resultados
+  shared/      API client, componentes reutilizáveis, assets e composables
+```
+
+## Requisitos
+
+- Node.js `^20.19.0 || >=22.12.0`
+- npm
+- Backend da Dentalpar rodando localmente
+
+## Configuração
+
+Instale as dependências:
 
 ```sh
 npm install
 ```
 
-### Compile and Hot-Reload for Development
+Crie um arquivo `.env` na raiz do projeto se quiser sobrescrever a URL padrão da API:
+
+```env
+VITE_API_BASE_URL=http://localhost:8000/api/v1
+```
+
+Se a variável não existir, o frontend usa `http://localhost:8000/api/v1` por padrão.
+
+## Executando o Projeto
+
+Suba o frontend em modo desenvolvimento:
 
 ```sh
 npm run dev
 ```
 
-### Type-Check, Compile and Minify for Production
+Gere a build de produção:
 
 ```sh
 npm run build
 ```
 
-### Run Unit Tests with [Vitest](https://vitest.dev/)
+Abra a build localmente:
 
 ```sh
+npm run preview
+```
+
+## Scripts Disponíveis
+
+```sh
+npm run dev
+npm run build
+npm run preview
+npm run lint
 npm run test:unit
-```
-
-### Run End-to-End Tests with [Playwright](https://playwright.dev)
-
-```sh
-# Install browsers for the first run
-npx playwright install
-
-# When testing on CI, must build the project first
-npm run build
-
-# Runs the end-to-end tests
 npm run test:e2e
-# Runs the tests only on Chromium
-npm run test:e2e -- --project=chromium
-# Runs the tests of a specific file
-npm run test:e2e -- tests/example.spec.ts
-# Runs the tests in debug mode
-npm run test:e2e -- --debug
+npm run format
 ```
 
-### Lint with [ESLint](https://eslint.org/)
+## Qualidade
+
+Lint:
 
 ```sh
 npm run lint
 ```
+
+Testes unitários:
+
+```sh
+npm run test:unit -- --run
+```
+
+Testes end-to-end:
+
+```sh
+npm run test:e2e
+```
+
+Na primeira execução do Playwright, pode ser necessário instalar os browsers:
+
+```sh
+npx playwright install
+```
+
+## Integração com o Backend
+
+O frontend conversa com a API da Dentalpar por meio de um client compartilhado em [src/shared/api/httpClient.ts](/home/gabrielayala/Workspace/Advize/front-crawler/src/shared/api/httpClient.ts) e segue o contrato documentado em [frontend-handoff.md](/home/gabrielayala/Workspace/Advize/front-crawler/frontend-handoff.md).
+
+Fluxos atualmente suportados:
+
+- `POST /auth/login`
+- `POST /users/register`
+- `POST /crawlers/{provider}`
+- `POST /crawlers/batches`
+- `GET /crawlers/jobs/{id}`
+- `GET /crawlers/jobs/{id}/dentists`
+- `GET /crawlers/batches/{id}`
+- `GET /crawlers/batches/{id}/dentists`
+
+## Arquivos Importantes
+
+- [src/app/main.ts](/home/gabrielayala/Workspace/Advize/front-crawler/src/app/main.ts)
+- [src/app/router.ts](/home/gabrielayala/Workspace/Advize/front-crawler/src/app/router.ts)
+- [src/app/primevue.ts](/home/gabrielayala/Workspace/Advize/front-crawler/src/app/primevue.ts)
+- [src/modules/auth/store/useAuthStore.ts](/home/gabrielayala/Workspace/Advize/front-crawler/src/modules/auth/store/useAuthStore.ts)
+- [src/modules/home/store/useHomeSearchStore.ts](/home/gabrielayala/Workspace/Advize/front-crawler/src/modules/home/store/useHomeSearchStore.ts)
+- [src/modules/home/api/crawlersApi.ts](/home/gabrielayala/Workspace/Advize/front-crawler/src/modules/home/api/crawlersApi.ts)
+
+## Observações
+
+- Com um provider selecionado, o frontend cria um `job`.
+- Com múltiplos providers selecionados, o frontend cria um `batch`.
+- O frontend faz polling de status antes de buscar os dentistas finais.
+- A sessão é persistida em `localStorage`.
