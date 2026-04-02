@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 
 import { storeToRefs } from 'pinia'
 import Button from 'primevue/button'
 import Card from 'primevue/card'
 import Checkbox from 'primevue/checkbox'
+import Fieldset from 'primevue/fieldset'
 import InputGroup from 'primevue/inputgroup'
 import InputGroupAddon from 'primevue/inputgroupaddon'
 import InputText from 'primevue/inputtext'
@@ -20,7 +21,26 @@ import { useAuthStore } from '@/modules/auth/store'
 import { isApiError } from '@/shared/api'
 import type { CrawlBatchStatus, CrawlJobStatus, CrawlProvider } from '@/shared/types'
 import { AppTopbar } from '@/shared/ui'
-import type { DentistSpecialty } from '../api'
+import {
+  getHapvidaCities,
+  getHapvidaContractTypes,
+  getHapvidaNeighborhoods,
+  getHapvidaProducts,
+  getHapvidaServices,
+  getHapvidaSpecialties,
+  getHapvidaStates,
+  getOdontoprevFilters,
+  getSulamericaCities,
+  getSulamericaHours,
+  getSulamericaPlans,
+  getSulamericaProducts,
+} from '../api'
+import type {
+  DentistSpecialty,
+  OdontoprevProviderOptions,
+  QueueBatchProviderOptions,
+  SelectOption,
+} from '../api'
 import { useHomeSearchStore } from '../store'
 
 const router = useRouter()
@@ -59,6 +79,93 @@ const {
   selectedProviders,
   selectedState,
 } = storeToRefs(homeSearchStore)
+
+type ProviderFieldErrors = Partial<Record<string, string>>
+
+const providerErrors = reactive<Record<CrawlProvider, ProviderFieldErrors>>({
+  odontoprev: {},
+  hapvida: {},
+  sulamerica: {},
+})
+
+const activeProviderPanel = ref<CrawlProvider | null>(null)
+
+const providerLoadErrors = reactive<Record<CrawlProvider, string>>({
+  odontoprev: '',
+  hapvida: '',
+  sulamerica: '',
+})
+
+const loadingState = reactive({
+  odontoprev: {
+    filters: false,
+  },
+  hapvida: {
+    contractTypes: false,
+    products: false,
+    states: false,
+    cities: false,
+    services: false,
+    specialties: false,
+    neighborhoods: false,
+  },
+  sulamerica: {
+    products: false,
+    plans: false,
+    cities: false,
+    hours: false,
+  },
+})
+
+const odontoprevCatalog = reactive({
+  loaded: false,
+  redes: [] as SelectOption[],
+  planos: [] as SelectOption[],
+  especialidades: [] as SelectOption[],
+})
+
+const odontoprevForm = reactive({
+  codigoRede: '',
+  codigoPlano: '',
+  codigoEspecialidade: '',
+  isEspecialista: false,
+  isAtendeWhatsApp: false,
+  nomeDentista: '',
+  acessibilidade: false,
+  idioma: '',
+})
+
+const hapvidaCatalog = reactive({
+  contractTypes: [] as SelectOption[],
+  products: [] as SelectOption[],
+  states: [] as SelectOption[],
+  cities: [] as SelectOption[],
+  services: [] as SelectOption[],
+  specialties: [] as SelectOption[],
+  neighborhoods: [] as SelectOption[],
+})
+
+const hapvidaForm = reactive({
+  tipoContrato: '',
+  produto: '',
+  servico: '',
+  especialidade: '',
+  bairro: '',
+})
+
+const sulamericaCatalog = reactive({
+  products: [] as SelectOption[],
+  plans: [] as SelectOption[],
+  cities: [] as SelectOption[],
+  hours: [] as SelectOption[],
+})
+
+const sulamericaForm = reactive({
+  produto: '',
+  plano: '',
+  horarioInicial: '',
+  horarioFinal: '',
+})
 
 const activeStatus = computed<CrawlBatchStatus | CrawlJobStatus | null>(() => {
   if (currentBatch.value) {
@@ -115,6 +222,45 @@ const providerHelperText = computed(() => {
   return 'Cidade e UF ja sao suficientes para iniciar a coleta.'
 })
 
+const searchStateOptions = computed(() => {
+  if (!selectedProviders.value.includes('hapvida') || hapvidaCatalog.states.length === 0) {
+    return stateOptions
+  }
+
+  const allowedCodes = new Set(hapvidaCatalog.states.map((option) => option.codigo))
+
+  return stateOptions.filter((option) => allowedCodes.has(option.code))
+})
+
+const hasRequiredProviderFilters = computed(() => {
+  return selectedProviders.value.every((provider) => {
+    if (provider === 'odontoprev') {
+      const hasNetwork = Boolean(odontoprevForm.codigoRede)
+      const hasPlan = Boolean(odontoprevForm.codigoPlano)
+
+      return hasNetwork !== hasPlan
+    }
+
+    if (provider === 'hapvida') {
+      return Boolean(
+        hapvidaForm.tipoContrato &&
+          hapvidaForm.produto &&
+          hapvidaForm.servico &&
+          hapvidaForm.especialidade &&
+          hapvidaForm.bairro,
+      )
+    }
+
+    return Boolean(sulamericaForm.produto && sulamericaForm.plano)
+  })
+})
+
+const canSubmitSearch = computed(() => canSearch.value && hasRequiredProviderFilters.value)
+
+const selectedProviderOptions = computed(() =>
+  providerOptions.filter((option) => selectedProviders.value.includes(option.value)),
+)
+
 const showHero = computed(
   () => !currentJob.value && !currentBatch.value && !isSubmitting.value && !hasAnyDentists.value,
 )
@@ -134,7 +280,7 @@ const showResultsSection = computed(() => {
   return false
 })
 
-const searchButtonLabel = computed(() => (isSubmitting.value ? 'Buscando...' : 'Buscar'))
+const searchButtonLabel = computed(() => (isSubmitting.value ? 'Buscando...' : 'Buscar dentistas'))
 
 const displayDentists = computed(() => {
   if (currentBatch.value) {
@@ -218,6 +364,531 @@ const statusRows = computed(() => {
       ]
     : []
 })
+
+function resetProviderErrors(provider?: CrawlProvider) {
+  if (provider) {
+    providerErrors[provider] = {}
+    return
+  }
+
+  providerErrors.odontoprev = {}
+  providerErrors.hapvida = {}
+  providerErrors.sulamerica = {}
+}
+
+function clearProviderLoadError(provider: CrawlProvider) {
+  providerLoadErrors[provider] = ''
+}
+
+async function handleCatalogFailure(
+  provider: CrawlProvider,
+  error: unknown,
+  fallbackMessage: string,
+) {
+  if (await handleUnauthorized(error)) {
+    return
+  }
+
+  const message = isApiError(error) ? error.message : fallbackMessage
+  providerLoadErrors[provider] = message
+
+  toast.add({
+    severity: 'error',
+    summary: message,
+    life: 4000,
+  })
+}
+
+function trimValue(value: string) {
+  return value.trim()
+}
+
+function handleOdontoprevNetworkChange(value: string | null) {
+  odontoprevForm.codigoRede = value ?? ''
+
+  if (odontoprevForm.codigoRede) {
+    odontoprevForm.codigoPlano = ''
+  }
+}
+
+function handleOdontoprevPlanChange(value: string | null) {
+  odontoprevForm.codigoPlano = value ?? ''
+
+  if (odontoprevForm.codigoPlano) {
+    odontoprevForm.codigoRede = ''
+  }
+}
+
+function normalizeCatalogValue(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .trim()
+    .toUpperCase()
+}
+
+const isHapvidaCityCompatible = computed(() => {
+  if (!selectedProviders.value.includes('hapvida') || !trimValue(city.value) || hapvidaCatalog.cities.length === 0) {
+    return true
+  }
+
+  const currentCity = normalizeCatalogValue(city.value)
+
+  return hapvidaCatalog.cities.some((option) => normalizeCatalogValue(option.codigo) === currentCity)
+})
+
+const isSulamericaCityCompatible = computed(() => {
+  if (
+    !selectedProviders.value.includes('sulamerica') ||
+    !trimValue(city.value) ||
+    sulamericaCatalog.cities.length === 0
+  ) {
+    return true
+  }
+
+  const currentCity = normalizeCatalogValue(city.value)
+
+  return sulamericaCatalog.cities.some((option) => normalizeCatalogValue(option.codigo) === currentCity)
+})
+
+function resetHapvidaProductsAndBelow() {
+  hapvidaForm.produto = ''
+  hapvidaForm.servico = ''
+  hapvidaForm.especialidade = ''
+  hapvidaForm.bairro = ''
+  hapvidaCatalog.products = []
+  hapvidaCatalog.states = []
+  hapvidaCatalog.cities = []
+  hapvidaCatalog.services = []
+  hapvidaCatalog.specialties = []
+  hapvidaCatalog.neighborhoods = []
+}
+
+function resetHapvidaStatesAndBelow() {
+  hapvidaForm.servico = ''
+  hapvidaForm.especialidade = ''
+  hapvidaForm.bairro = ''
+  hapvidaCatalog.states = []
+  hapvidaCatalog.cities = []
+  hapvidaCatalog.services = []
+  hapvidaCatalog.specialties = []
+  hapvidaCatalog.neighborhoods = []
+}
+
+function resetHapvidaServicesAndBelow() {
+  hapvidaForm.servico = ''
+  hapvidaForm.especialidade = ''
+  hapvidaForm.bairro = ''
+  hapvidaCatalog.services = []
+  hapvidaCatalog.specialties = []
+  hapvidaCatalog.neighborhoods = []
+}
+
+function resetHapvidaSpecialtiesAndBelow() {
+  hapvidaForm.especialidade = ''
+  hapvidaForm.bairro = ''
+  hapvidaCatalog.specialties = []
+  hapvidaCatalog.neighborhoods = []
+}
+
+function resetHapvidaNeighborhoods() {
+  hapvidaForm.bairro = ''
+  hapvidaCatalog.neighborhoods = []
+}
+
+function resetSulamericaPlansAndBelow() {
+  sulamericaForm.plano = ''
+  sulamericaCatalog.plans = []
+  sulamericaCatalog.cities = []
+}
+
+function resetSulamericaCitiesAndBelow() {
+  sulamericaCatalog.cities = []
+}
+
+async function loadOdontoprevCatalog(force = false) {
+  if (!authStore.token || (!force && (loadingState.odontoprev.filters || odontoprevCatalog.loaded))) {
+    return
+  }
+
+  loadingState.odontoprev.filters = true
+  clearProviderLoadError('odontoprev')
+
+  try {
+    const response = await getOdontoprevFilters(authStore.token)
+
+    odontoprevCatalog.redes = response.redes
+    odontoprevCatalog.planos = response.planos
+    odontoprevCatalog.especialidades = response.especialidades
+    odontoprevCatalog.loaded = true
+  } catch (error) {
+    await handleCatalogFailure('odontoprev', error, 'Nao foi possivel carregar os filtros da OdontoPrev.')
+  } finally {
+    loadingState.odontoprev.filters = false
+  }
+}
+
+async function loadHapvidaContractTypeOptions(force = false) {
+  if (!authStore.token || (!force && (loadingState.hapvida.contractTypes || hapvidaCatalog.contractTypes.length > 0))) {
+    return
+  }
+
+  loadingState.hapvida.contractTypes = true
+  clearProviderLoadError('hapvida')
+
+  try {
+    hapvidaCatalog.contractTypes = await getHapvidaContractTypes(authStore.token)
+  } catch (error) {
+    await handleCatalogFailure('hapvida', error, 'Nao foi possivel carregar os filtros da Hapvida.')
+  } finally {
+    loadingState.hapvida.contractTypes = false
+  }
+}
+
+async function loadHapvidaProductsOptions() {
+  if (!authStore.token || !hapvidaForm.tipoContrato) {
+    return
+  }
+
+  loadingState.hapvida.products = true
+  clearProviderLoadError('hapvida')
+
+  try {
+    hapvidaCatalog.products = await getHapvidaProducts(
+      { tipoContrato: hapvidaForm.tipoContrato },
+      authStore.token,
+    )
+  } catch (error) {
+    await handleCatalogFailure('hapvida', error, 'Nao foi possivel carregar os produtos da Hapvida.')
+  } finally {
+    loadingState.hapvida.products = false
+  }
+}
+
+async function loadHapvidaStateOptions() {
+  if (!authStore.token || !hapvidaForm.produto) {
+    return
+  }
+
+  loadingState.hapvida.states = true
+  clearProviderLoadError('hapvida')
+
+  try {
+    hapvidaCatalog.states = await getHapvidaStates({ produto: hapvidaForm.produto }, authStore.token)
+  } catch (error) {
+    await handleCatalogFailure('hapvida', error, 'Nao foi possivel carregar as UFs da Hapvida.')
+  } finally {
+    loadingState.hapvida.states = false
+  }
+}
+
+async function loadHapvidaCityOptions() {
+  if (!authStore.token || !hapvidaForm.produto || !selectedState.value?.code) {
+    return
+  }
+
+  loadingState.hapvida.cities = true
+  clearProviderLoadError('hapvida')
+
+  try {
+    hapvidaCatalog.cities = await getHapvidaCities(
+      { produto: hapvidaForm.produto, uf: selectedState.value.code },
+      authStore.token,
+    )
+  } catch (error) {
+    await handleCatalogFailure('hapvida', error, 'Nao foi possivel carregar as cidades da Hapvida.')
+  } finally {
+    loadingState.hapvida.cities = false
+  }
+}
+
+async function loadHapvidaServiceOptions() {
+  if (!authStore.token || !hapvidaForm.produto || !selectedState.value?.code || !trimValue(city.value)) {
+    return
+  }
+
+  loadingState.hapvida.services = true
+  clearProviderLoadError('hapvida')
+
+  try {
+    hapvidaCatalog.services = await getHapvidaServices(
+      {
+        produto: hapvidaForm.produto,
+        uf: selectedState.value.code,
+        cidade: trimValue(city.value),
+      },
+      authStore.token,
+    )
+  } catch (error) {
+    await handleCatalogFailure('hapvida', error, 'Nao foi possivel carregar os servicos da Hapvida.')
+  } finally {
+    loadingState.hapvida.services = false
+  }
+}
+
+async function loadHapvidaSpecialtyOptions() {
+  if (
+    !authStore.token ||
+    !hapvidaForm.produto ||
+    !selectedState.value?.code ||
+    !trimValue(city.value) ||
+    !hapvidaForm.servico
+  ) {
+    return
+  }
+
+  loadingState.hapvida.specialties = true
+  clearProviderLoadError('hapvida')
+
+  try {
+    hapvidaCatalog.specialties = await getHapvidaSpecialties(
+      {
+        produto: hapvidaForm.produto,
+        uf: selectedState.value.code,
+        cidade: trimValue(city.value),
+        servico: hapvidaForm.servico,
+      },
+      authStore.token,
+    )
+  } catch (error) {
+    await handleCatalogFailure('hapvida', error, 'Nao foi possivel carregar as especialidades da Hapvida.')
+  } finally {
+    loadingState.hapvida.specialties = false
+  }
+}
+
+async function loadHapvidaNeighborhoodOptions() {
+  if (
+    !authStore.token ||
+    !hapvidaForm.produto ||
+    !selectedState.value?.code ||
+    !trimValue(city.value) ||
+    !hapvidaForm.servico ||
+    !hapvidaForm.especialidade
+  ) {
+    return
+  }
+
+  loadingState.hapvida.neighborhoods = true
+  clearProviderLoadError('hapvida')
+
+  try {
+    hapvidaCatalog.neighborhoods = await getHapvidaNeighborhoods(
+      {
+        produto: hapvidaForm.produto,
+        uf: selectedState.value.code,
+        cidade: trimValue(city.value),
+        servico: hapvidaForm.servico,
+        especialidade: hapvidaForm.especialidade,
+      },
+      authStore.token,
+    )
+  } catch (error) {
+    await handleCatalogFailure('hapvida', error, 'Nao foi possivel carregar os bairros da Hapvida.')
+  } finally {
+    loadingState.hapvida.neighborhoods = false
+  }
+}
+
+async function loadSulamericaProductOptions(force = false) {
+  if (!authStore.token || (!force && (loadingState.sulamerica.products || sulamericaCatalog.products.length > 0))) {
+    return
+  }
+
+  loadingState.sulamerica.products = true
+  clearProviderLoadError('sulamerica')
+
+  try {
+    sulamericaCatalog.products = await getSulamericaProducts(authStore.token)
+  } catch (error) {
+    await handleCatalogFailure('sulamerica', error, 'Nao foi possivel carregar os produtos da SulAmerica.')
+  } finally {
+    loadingState.sulamerica.products = false
+  }
+}
+
+async function loadSulamericaHourOptions(force = false) {
+  if (!authStore.token || (!force && (loadingState.sulamerica.hours || sulamericaCatalog.hours.length > 0))) {
+    return
+  }
+
+  loadingState.sulamerica.hours = true
+  clearProviderLoadError('sulamerica')
+
+  try {
+    sulamericaCatalog.hours = await getSulamericaHours(authStore.token)
+
+    if (!sulamericaForm.horarioInicial && sulamericaCatalog.hours.length > 0) {
+      sulamericaForm.horarioInicial = sulamericaCatalog.hours[0]?.codigo ?? ''
+      sulamericaForm.horarioFinal =
+        sulamericaCatalog.hours[sulamericaCatalog.hours.length - 1]?.codigo ?? ''
+    }
+  } catch (error) {
+    await handleCatalogFailure('sulamerica', error, 'Nao foi possivel carregar os horarios da SulAmerica.')
+  } finally {
+    loadingState.sulamerica.hours = false
+  }
+}
+
+async function loadSulamericaPlanOptions() {
+  if (!authStore.token || !sulamericaForm.produto) {
+    return
+  }
+
+  loadingState.sulamerica.plans = true
+  clearProviderLoadError('sulamerica')
+
+  try {
+    sulamericaCatalog.plans = await getSulamericaPlans(
+      { produto: sulamericaForm.produto },
+      authStore.token,
+    )
+  } catch (error) {
+    await handleCatalogFailure('sulamerica', error, 'Nao foi possivel carregar os planos da SulAmerica.')
+  } finally {
+    loadingState.sulamerica.plans = false
+  }
+}
+
+async function loadSulamericaCityOptions() {
+  if (!authStore.token || !selectedState.value?.code || !sulamericaForm.produto || !sulamericaForm.plano) {
+    return
+  }
+
+  loadingState.sulamerica.cities = true
+  clearProviderLoadError('sulamerica')
+
+  try {
+    sulamericaCatalog.cities = await getSulamericaCities(
+      {
+        uf: selectedState.value.code,
+        produto: sulamericaForm.produto,
+        plano: sulamericaForm.plano,
+      },
+      authStore.token,
+    )
+  } catch (error) {
+    await handleCatalogFailure('sulamerica', error, 'Nao foi possivel carregar as cidades da SulAmerica.')
+  } finally {
+    loadingState.sulamerica.cities = false
+  }
+}
+
+function validateProviderFilters() {
+  resetProviderErrors()
+
+  for (const provider of selectedProviders.value) {
+    if (provider === 'odontoprev') {
+      const hasNetwork = Boolean(odontoprevForm.codigoRede)
+      const hasPlan = Boolean(odontoprevForm.codigoPlano)
+
+      if (hasNetwork === hasPlan) {
+        providerErrors.odontoprev.selection = 'Selecione exatamente uma Rede ou um Plano.'
+      }
+    }
+
+    if (provider === 'hapvida') {
+      if (!hapvidaForm.tipoContrato) {
+        providerErrors.hapvida.tipoContrato = 'Selecione o tipo de contrato.'
+      }
+
+      if (!hapvidaForm.produto) {
+        providerErrors.hapvida.produto = 'Selecione o produto.'
+      }
+
+      if (!hapvidaForm.servico) {
+        providerErrors.hapvida.servico = 'Selecione o servico.'
+      }
+
+      if (!hapvidaForm.especialidade) {
+        providerErrors.hapvida.especialidade = 'Selecione a especialidade.'
+      }
+
+      if (!hapvidaForm.bairro) {
+        providerErrors.hapvida.bairro = 'Selecione o bairro.'
+      }
+    }
+
+    if (provider === 'sulamerica') {
+      if (!sulamericaForm.produto) {
+        providerErrors.sulamerica.produto = 'Selecione o produto.'
+      }
+
+      if (!sulamericaForm.plano) {
+        providerErrors.sulamerica.plano = 'Selecione o plano.'
+      }
+    }
+  }
+
+  return (
+    Object.keys(providerErrors.odontoprev).length === 0 &&
+    Object.keys(providerErrors.hapvida).length === 0 &&
+    Object.keys(providerErrors.sulamerica).length === 0
+  )
+}
+
+function buildProviderOptionsPayload(): QueueBatchProviderOptions {
+  const nextOptions: QueueBatchProviderOptions = {}
+
+  if (selectedProviders.value.includes('odontoprev')) {
+    const odontoprevOptions: OdontoprevProviderOptions = {}
+
+    if (odontoprevForm.codigoRede) {
+      odontoprevOptions.codigoRede = odontoprevForm.codigoRede
+    }
+
+    if (odontoprevForm.codigoPlano) {
+      odontoprevOptions.codigoPlano = odontoprevForm.codigoPlano
+    }
+
+    if (odontoprevForm.codigoEspecialidade) {
+      odontoprevOptions.codigoEspecialidade = odontoprevForm.codigoEspecialidade
+    }
+
+    if (odontoprevForm.isEspecialista) {
+      odontoprevOptions.isEspecialista = true
+    }
+
+    if (odontoprevForm.isAtendeWhatsApp) {
+      odontoprevOptions.isAtendeWhatsApp = true
+    }
+
+    if (trimValue(odontoprevForm.nomeDentista)) {
+      odontoprevOptions.nomeDentista = trimValue(odontoprevForm.nomeDentista)
+    }
+
+    if (odontoprevForm.acessibilidade) {
+      odontoprevOptions.acessibilidade = 'S'
+    }
+
+    if (trimValue(odontoprevForm.idioma)) {
+      odontoprevOptions.idioma = trimValue(odontoprevForm.idioma)
+    }
+
+    nextOptions.odontoprev = odontoprevOptions
+  }
+
+  if (selectedProviders.value.includes('hapvida')) {
+    nextOptions.hapvida = {
+      tipoContrato: hapvidaForm.tipoContrato,
+      produto: hapvidaForm.produto,
+      servico: hapvidaForm.servico,
+      especialidade: hapvidaForm.especialidade,
+      bairro: hapvidaForm.bairro,
+    }
+  }
+
+  if (selectedProviders.value.includes('sulamerica')) {
+    nextOptions.sulamerica = {
+      produto: sulamericaForm.produto,
+      plano: sulamericaForm.plano,
+      ...(sulamericaForm.horarioInicial ? { horarioInicial: sulamericaForm.horarioInicial } : {}),
+      ...(sulamericaForm.horarioFinal ? { horarioFinal: sulamericaForm.horarioFinal } : {}),
+    }
+  }
+
+  return nextOptions
+}
 
 function formatStatusLabel(status: CrawlBatchStatus | CrawlJobStatus | null | undefined) {
   switch (status) {
@@ -486,8 +1157,20 @@ async function handleStartCrawl() {
     return
   }
 
+  if (!validateProviderFilters()) {
+    toast.add({
+      severity: 'warn',
+      summary: 'Preencha os filtros obrigatorios do provider selecionado.',
+      life: 3500,
+    })
+
+    return
+  }
+
   try {
-    const result = await homeSearchStore.startCrawl(authStore.token)
+    const result = await homeSearchStore.startCrawl(authStore.token, {
+      providerOptions: buildProviderOptionsPayload(),
+    })
 
     if (!result) {
       return
@@ -553,6 +1236,176 @@ async function refreshCurrentStatus() {
     }
   }
 }
+
+watch(
+  () => [...selectedProviders.value],
+  (providers) => {
+    resetProviderErrors()
+
+    if (providers.length === 0) {
+      activeProviderPanel.value = null
+    } else if (!activeProviderPanel.value || !providers.includes(activeProviderPanel.value)) {
+      activeProviderPanel.value = providers[0] ?? null
+    }
+
+    if (providers.includes('odontoprev')) {
+      void loadOdontoprevCatalog()
+    }
+
+    if (providers.includes('hapvida')) {
+      void loadHapvidaContractTypeOptions()
+    }
+
+    if (providers.includes('sulamerica')) {
+      void loadSulamericaProductOptions()
+      void loadSulamericaHourOptions()
+    }
+  },
+  { immediate: true },
+)
+
+watch(
+  () => hapvidaForm.tipoContrato,
+  (value, previousValue) => {
+    if (value === previousValue) {
+      return
+    }
+
+    resetHapvidaProductsAndBelow()
+
+    if (value && selectedProviders.value.includes('hapvida')) {
+      void loadHapvidaProductsOptions()
+    }
+  },
+)
+
+watch(
+  () => hapvidaForm.produto,
+  (value, previousValue) => {
+    if (value === previousValue) {
+      return
+    }
+
+    resetHapvidaStatesAndBelow()
+
+    if (value && selectedProviders.value.includes('hapvida')) {
+      void loadHapvidaStateOptions()
+
+      if (selectedState.value?.code) {
+        void loadHapvidaCityOptions()
+      }
+    }
+  },
+)
+
+watch(
+  () => selectedState.value?.code ?? '',
+  (value, previousValue) => {
+    if (value === previousValue) {
+      return
+    }
+
+    if (hapvidaForm.produto) {
+      resetHapvidaServicesAndBelow()
+      void loadHapvidaCityOptions()
+    }
+
+    if (sulamericaForm.produto && sulamericaForm.plano) {
+      resetSulamericaCitiesAndBelow()
+      void loadSulamericaCityOptions()
+    }
+  },
+)
+
+watch(
+  () => searchStateOptions.value.map((option) => option.code).join(','),
+  () => {
+    if (
+      selectedState.value &&
+      !searchStateOptions.value.some((option) => option.code === selectedState.value?.code)
+    ) {
+      selectedState.value = null
+    }
+  },
+)
+
+watch(
+  () => trimValue(city.value),
+  (value, previousValue) => {
+    if (value === previousValue) {
+      return
+    }
+
+    if (hapvidaForm.produto && selectedState.value?.code) {
+      resetHapvidaServicesAndBelow()
+
+      if (value) {
+        void loadHapvidaServiceOptions()
+      }
+    }
+
+  },
+)
+
+watch(
+  () => hapvidaForm.servico,
+  (value, previousValue) => {
+    if (value === previousValue) {
+      return
+    }
+
+    resetHapvidaSpecialtiesAndBelow()
+
+    if (value) {
+      void loadHapvidaSpecialtyOptions()
+    }
+  },
+)
+
+watch(
+  () => hapvidaForm.especialidade,
+  (value, previousValue) => {
+    if (value === previousValue) {
+      return
+    }
+
+    resetHapvidaNeighborhoods()
+
+    if (value) {
+      void loadHapvidaNeighborhoodOptions()
+    }
+  },
+)
+
+watch(
+  () => sulamericaForm.produto,
+  (value, previousValue) => {
+    if (value === previousValue) {
+      return
+    }
+
+    resetSulamericaPlansAndBelow()
+
+    if (value && selectedProviders.value.includes('sulamerica')) {
+      void loadSulamericaPlanOptions()
+    }
+  },
+)
+
+watch(
+  () => sulamericaForm.plano,
+  (value, previousValue) => {
+    if (value === previousValue) {
+      return
+    }
+
+    resetSulamericaCitiesAndBelow()
+
+    if (value && selectedState.value?.code) {
+      void loadSulamericaCityOptions()
+    }
+  },
+)
 
 let pollingTimer: ReturnType<typeof setTimeout> | null = null
 let lastStatus: string | null = null
@@ -691,8 +1544,8 @@ onBeforeUnmount(() => {
 
           <Card class="search-card" role="search">
             <template #content>
-              <div class="search-card-body">
-                <div class="search-controls">
+                <div class="search-card-body">
+                  <div class="search-controls">
                   <InputGroup class="city-group">
                     <InputGroupAddon>
                       <i class="pi pi-send" aria-hidden="true" />
@@ -712,7 +1565,7 @@ onBeforeUnmount(() => {
                     v-model="selectedState"
                     :disabled="selectedProviders.length === 0"
                     :invalid="Boolean(formErrors.uf)"
-                    :options="stateOptions"
+                    :options="searchStateOptions"
                     aria-label="Estado"
                     class="state-select"
                     fluid
@@ -721,14 +1574,18 @@ onBeforeUnmount(() => {
                   />
 
                   <Button
-                    :disabled="!canSearch"
+                    :disabled="!canSubmitSearch"
                     :label="searchButtonLabel"
                     :loading="isSubmitting"
                     class="search-submit"
                     icon="pi pi-search"
                     @click="handleStartCrawl"
                   />
-                </div>
+                  </div>
+
+                  <p v-if="selectedProviders.length > 0" class="search-submit-hint">
+                    A busca final e confirmada pelo botao acima. Cidade e UF definidos aqui valem para todos os providers selecionados.
+                  </p>
 
                 <Message v-if="formError" severity="error" variant="outlined">
                   {{ formError }}
@@ -748,6 +1605,390 @@ onBeforeUnmount(() => {
               </div>
             </template>
           </Card>
+
+          <div v-if="selectedProviders.length > 0" class="provider-panels">
+            <div class="provider-panel-switcher">
+              <span class="section-label">Filtros por provider</span>
+              <p class="provider-panel-help">
+                Configure um provider por vez. Quando o catalogo do provider definir a cidade,
+                ela sera sincronizada automaticamente com a busca principal.
+              </p>
+              <div class="provider-panel-switcher-buttons" role="tablist" aria-label="Filtros por provider">
+                <Button
+                  v-for="option in selectedProviderOptions"
+                  :key="option.value"
+                  :class="['provider-panel-trigger', { 'provider-panel-trigger--active': activeProviderPanel === option.value }]"
+                  :label="option.label"
+                  :severity="activeProviderPanel === option.value ? 'primary' : 'secondary'"
+                  :variant="activeProviderPanel === option.value ? undefined : 'outlined'"
+                  rounded
+                  size="small"
+                  @click="activeProviderPanel = option.value"
+                />
+              </div>
+            </div>
+
+            <Card v-if="activeProviderPanel === 'odontoprev'" class="provider-panel">
+              <template #content>
+                <div class="provider-panel-body">
+                  <div class="provider-panel-header">
+                    <div>
+                      <h2>Filtros OdontoPrev</h2>
+                      <p>Escolha exatamente uma rede ou um plano e complete os filtros opcionais.</p>
+                    </div>
+                    <Tag :class="getProviderTone('odontoprev')" rounded severity="secondary" value="OdontoPrev" />
+                  </div>
+
+                  <Message
+                    v-if="providerLoadErrors.odontoprev"
+                    severity="error"
+                    size="small"
+                    variant="outlined"
+                  >
+                    {{ providerLoadErrors.odontoprev }}
+                  </Message>
+
+                  <div class="provider-fields-grid">
+                    <div class="provider-field provider-field--full">
+                      <label for="odontoprev-rede">Rede</label>
+                      <Select
+                        input-id="odontoprev-rede"
+                        :disabled="Boolean(odontoprevForm.codigoPlano)"
+                        :invalid="Boolean(providerErrors.odontoprev.selection)"
+                        :loading="loadingState.odontoprev.filters"
+                        :model-value="odontoprevForm.codigoRede || null"
+                        :options="odontoprevCatalog.redes"
+                        option-label="nome"
+                        option-value="codigo"
+                        placeholder="Selecione a rede"
+                        show-clear
+                        @update:model-value="handleOdontoprevNetworkChange"
+                      />
+                    </div>
+
+                    <div class="provider-field provider-field--full">
+                      <label for="odontoprev-plano">Plano</label>
+                      <Select
+                        input-id="odontoprev-plano"
+                        :disabled="Boolean(odontoprevForm.codigoRede)"
+                        :invalid="Boolean(providerErrors.odontoprev.selection)"
+                        :loading="loadingState.odontoprev.filters"
+                        :model-value="odontoprevForm.codigoPlano || null"
+                        :options="odontoprevCatalog.planos"
+                        option-label="nome"
+                        option-value="codigo"
+                        placeholder="Selecione o plano"
+                        show-clear
+                        @update:model-value="handleOdontoprevPlanChange"
+                      />
+                    </div>
+                  </div>
+
+                  <div v-if="providerErrors.odontoprev.selection" class="provider-inline-errors">
+                    <small>{{ providerErrors.odontoprev.selection }}</small>
+                  </div>
+
+                  <Fieldset
+                    legend="Filtros opcionais"
+                    :toggleable="true"
+                    :collapsed="true"
+                    class="provider-advanced"
+                  >
+                    <div class="provider-fields-grid">
+                      <div class="provider-field">
+                        <label for="odontoprev-especialidade">Especialidade</label>
+                        <Select
+                          v-model="odontoprevForm.codigoEspecialidade"
+                          input-id="odontoprev-especialidade"
+                          :loading="loadingState.odontoprev.filters"
+                          :options="odontoprevCatalog.especialidades"
+                          option-label="nome"
+                          option-value="codigo"
+                          placeholder="Especialidade"
+                          show-clear
+                        />
+                      </div>
+
+                      <div class="provider-field">
+                        <label for="odontoprev-nome">Nome do dentista</label>
+                        <InputText
+                          v-model="odontoprevForm.nomeDentista"
+                          id="odontoprev-nome"
+                          placeholder="Digite o nome do dentista"
+                        />
+                      </div>
+
+                      <div class="provider-field">
+                        <label for="odontoprev-idioma">Idioma</label>
+                        <InputText
+                          v-model="odontoprevForm.idioma"
+                          id="odontoprev-idioma"
+                          placeholder="Ex.: INGLES"
+                        />
+                      </div>
+                    </div>
+
+                    <div class="provider-binary-grid">
+                      <label class="binary-option" for="odontoprev-especialista">
+                        <Checkbox
+                          v-model="odontoprevForm.isEspecialista"
+                          binary
+                          input-id="odontoprev-especialista"
+                        />
+                        <span>Somente especialista</span>
+                      </label>
+
+                      <label class="binary-option" for="odontoprev-whatsapp">
+                        <Checkbox
+                          v-model="odontoprevForm.isAtendeWhatsApp"
+                          binary
+                          input-id="odontoprev-whatsapp"
+                        />
+                        <span>Atende WhatsApp</span>
+                      </label>
+
+                      <label class="binary-option" for="odontoprev-acessibilidade">
+                        <Checkbox
+                          v-model="odontoprevForm.acessibilidade"
+                          binary
+                          input-id="odontoprev-acessibilidade"
+                        />
+                        <span>Acessibilidade</span>
+                      </label>
+                    </div>
+                  </Fieldset>
+                </div>
+              </template>
+            </Card>
+
+            <Card v-if="activeProviderPanel === 'hapvida'" class="provider-panel">
+              <template #content>
+                <div class="provider-panel-body">
+                  <div class="provider-panel-header">
+                    <div>
+                      <h2>Filtros Hapvida</h2>
+                      <p>Configure apenas os filtros complementares. A cidade e a UF desta busca continuam vindo do topo da tela.</p>
+                    </div>
+                    <Tag :class="getProviderTone('hapvida')" rounded severity="secondary" value="Hapvida" />
+                  </div>
+
+                  <Message
+                    v-if="providerLoadErrors.hapvida"
+                    severity="error"
+                    size="small"
+                    variant="outlined"
+                  >
+                    {{ providerLoadErrors.hapvida }}
+                  </Message>
+
+                  <Message
+                    v-else-if="hapvidaCatalog.cities.length > 0 && !isHapvidaCityCompatible"
+                    severity="warn"
+                    size="small"
+                    variant="outlined"
+                  >
+                    A cidade informada no topo nao apareceu no catalogo atual da Hapvida para este produto e UF.
+                  </Message>
+
+                  <div class="provider-fields-grid">
+                    <div class="provider-field provider-field--full">
+                      <label for="hapvida-tipo-contrato">Tipo de contrato</label>
+                      <Select
+                        v-model="hapvidaForm.tipoContrato"
+                        input-id="hapvida-tipo-contrato"
+                        :invalid="Boolean(providerErrors.hapvida.tipoContrato)"
+                        :loading="loadingState.hapvida.contractTypes"
+                        :options="hapvidaCatalog.contractTypes"
+                        option-label="nome"
+                        option-value="codigo"
+                        placeholder="Selecione"
+                        show-clear
+                      />
+                    </div>
+
+                    <div class="provider-field provider-field--full">
+                      <label for="hapvida-produto">Produto</label>
+                      <Select
+                        v-model="hapvidaForm.produto"
+                        input-id="hapvida-produto"
+                        :disabled="!hapvidaForm.tipoContrato"
+                        :invalid="Boolean(providerErrors.hapvida.produto)"
+                        :loading="loadingState.hapvida.products"
+                        :options="hapvidaCatalog.products"
+                        option-label="nome"
+                        option-value="codigo"
+                        placeholder="Selecione"
+                        show-clear
+                      />
+                    </div>
+
+                    <div class="provider-field">
+                      <label for="hapvida-servico">Servico</label>
+                      <Select
+                        v-model="hapvidaForm.servico"
+                        input-id="hapvida-servico"
+                        :disabled="!trimValue(city) || !selectedState || !hapvidaForm.produto || !isHapvidaCityCompatible"
+                        :invalid="Boolean(providerErrors.hapvida.servico)"
+                        :loading="loadingState.hapvida.services"
+                        :options="hapvidaCatalog.services"
+                        option-label="nome"
+                        option-value="codigo"
+                        placeholder="Selecione"
+                        show-clear
+                      />
+                    </div>
+
+                    <div class="provider-field">
+                      <label for="hapvida-especialidade">Especialidade</label>
+                      <Select
+                        v-model="hapvidaForm.especialidade"
+                        input-id="hapvida-especialidade"
+                        :disabled="!hapvidaForm.servico"
+                        :invalid="Boolean(providerErrors.hapvida.especialidade)"
+                        :loading="loadingState.hapvida.specialties"
+                        :options="hapvidaCatalog.specialties"
+                        option-label="nome"
+                        option-value="codigo"
+                        placeholder="Selecione"
+                        show-clear
+                      />
+                    </div>
+
+                    <div class="provider-field">
+                      <label for="hapvida-bairro">Bairro</label>
+                      <Select
+                        v-model="hapvidaForm.bairro"
+                        input-id="hapvida-bairro"
+                        :disabled="!hapvidaForm.especialidade"
+                        :invalid="Boolean(providerErrors.hapvida.bairro)"
+                        :loading="loadingState.hapvida.neighborhoods"
+                        :options="hapvidaCatalog.neighborhoods"
+                        option-label="nome"
+                        option-value="codigo"
+                        placeholder="Selecione"
+                        show-clear
+                      />
+                    </div>
+                  </div>
+
+                  <div v-if="Object.keys(providerErrors.hapvida).length > 0" class="provider-inline-errors">
+                    <small v-if="providerErrors.hapvida.tipoContrato">{{ providerErrors.hapvida.tipoContrato }}</small>
+                    <small v-if="providerErrors.hapvida.produto">{{ providerErrors.hapvida.produto }}</small>
+                    <small v-if="providerErrors.hapvida.servico">{{ providerErrors.hapvida.servico }}</small>
+                    <small v-if="providerErrors.hapvida.especialidade">{{ providerErrors.hapvida.especialidade }}</small>
+                    <small v-if="providerErrors.hapvida.bairro">{{ providerErrors.hapvida.bairro }}</small>
+                  </div>
+                </div>
+              </template>
+            </Card>
+
+            <Card v-if="activeProviderPanel === 'sulamerica'" class="provider-panel">
+              <template #content>
+                <div class="provider-panel-body">
+                  <div class="provider-panel-header">
+                    <div>
+                      <h2>Filtros SulAmerica</h2>
+                      <p>Escolha produto e plano e, se quiser, refine apenas a janela de horario. Cidade e UF continuam vindo do topo.</p>
+                    </div>
+                    <Tag :class="getProviderTone('sulamerica')" rounded severity="secondary" value="SulAmerica" />
+                  </div>
+
+                  <Message
+                    v-if="providerLoadErrors.sulamerica"
+                    severity="error"
+                    size="small"
+                    variant="outlined"
+                  >
+                    {{ providerLoadErrors.sulamerica }}
+                  </Message>
+
+                  <Message
+                    v-else-if="sulamericaCatalog.cities.length > 0 && !isSulamericaCityCompatible"
+                    severity="warn"
+                    size="small"
+                    variant="outlined"
+                  >
+                    A cidade informada no topo nao apareceu no catalogo atual da SulAmerica para o produto, plano e UF selecionados.
+                  </Message>
+
+                  <div class="provider-fields-grid">
+                    <div class="provider-field provider-field--full">
+                      <label for="sulamerica-produto">Produto</label>
+                      <Select
+                        v-model="sulamericaForm.produto"
+                        input-id="sulamerica-produto"
+                        :invalid="Boolean(providerErrors.sulamerica.produto)"
+                        :loading="loadingState.sulamerica.products"
+                        :options="sulamericaCatalog.products"
+                        option-label="nome"
+                        option-value="codigo"
+                        placeholder="Selecione"
+                        show-clear
+                      />
+                    </div>
+
+                    <div class="provider-field provider-field--full">
+                      <label for="sulamerica-plano">Plano</label>
+                      <Select
+                        v-model="sulamericaForm.plano"
+                        input-id="sulamerica-plano"
+                        :disabled="!sulamericaForm.produto"
+                        :invalid="Boolean(providerErrors.sulamerica.plano)"
+                        :loading="loadingState.sulamerica.plans"
+                        :options="sulamericaCatalog.plans"
+                        option-label="nome"
+                        option-value="codigo"
+                        placeholder="Selecione"
+                        show-clear
+                      />
+                    </div>
+                  </div>
+
+                  <Fieldset
+                    legend="Refinar horario"
+                    :toggleable="true"
+                    :collapsed="true"
+                    class="provider-advanced"
+                  >
+                    <div class="provider-fields-grid">
+                      <div class="provider-field">
+                        <label for="sulamerica-hora-inicial">Horario inicial</label>
+                        <Select
+                          v-model="sulamericaForm.horarioInicial"
+                          input-id="sulamerica-hora-inicial"
+                          :loading="loadingState.sulamerica.hours"
+                          :options="sulamericaCatalog.hours"
+                          option-label="nome"
+                          option-value="codigo"
+                          placeholder="Selecione"
+                          show-clear
+                        />
+                      </div>
+
+                      <div class="provider-field">
+                        <label for="sulamerica-hora-final">Horario final</label>
+                        <Select
+                          v-model="sulamericaForm.horarioFinal"
+                          input-id="sulamerica-hora-final"
+                          :loading="loadingState.sulamerica.hours"
+                          :options="sulamericaCatalog.hours"
+                          option-label="nome"
+                          option-value="codigo"
+                          placeholder="Selecione"
+                          show-clear
+                        />
+                      </div>
+                    </div>
+                  </Fieldset>
+
+                  <div v-if="Object.keys(providerErrors.sulamerica).length > 0" class="provider-inline-errors">
+                    <small v-if="providerErrors.sulamerica.produto">{{ providerErrors.sulamerica.produto }}</small>
+                    <small v-if="providerErrors.sulamerica.plano">{{ providerErrors.sulamerica.plano }}</small>
+                  </div>
+                </div>
+              </template>
+            </Card>
+          </div>
 
           <Card v-if="showStatusCard" class="status-card">
             <template #content>
@@ -1099,6 +2340,144 @@ onBeforeUnmount(() => {
   gap: 0.85rem;
 }
 
+.provider-panels {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.provider-panel-switcher {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.provider-panel-help {
+  margin: 0;
+  color: var(--p-text-muted-color);
+  line-height: 1.55;
+}
+
+.provider-panel-switcher-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.provider-panel-trigger {
+  min-width: 0;
+}
+
+.provider-panel-trigger--active {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--p-primary-color) 20%, transparent);
+}
+
+.provider-panel {
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--p-content-border-color) 65%, transparent);
+  box-shadow: var(--app-panel-shadow);
+}
+
+.provider-advanced {
+  border: 1px solid color-mix(in srgb, var(--p-content-border-color) 50%, transparent);
+  background: var(--app-panel-background-soft);
+}
+
+.provider-advanced :deep(.p-fieldset-legend) {
+  background: transparent;
+}
+
+.provider-advanced :deep(.p-fieldset-toggleable-content) {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.provider-panel :deep(.p-card-body) {
+  gap: 0;
+}
+
+.provider-panel-body {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.provider-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.provider-panel-header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.provider-panel-header p {
+  margin: 0.35rem 0 0;
+  color: var(--p-text-muted-color);
+  line-height: 1.55;
+}
+
+.provider-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.provider-field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.provider-field label {
+  color: var(--p-text-muted-color);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.provider-field--wide {
+  grid-column: span 2;
+}
+
+.provider-field--full {
+  grid-column: 1 / -1;
+}
+
+.provider-field :deep(.p-select),
+.provider-field :deep(.p-inputtext) {
+  width: 100%;
+}
+
+.provider-field :deep(.p-select-label) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-binary-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.binary-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--p-text-color);
+  font-size: 0.92rem;
+}
+
+.provider-inline-errors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+}
+
+.provider-inline-errors small {
+  color: var(--p-red-500);
+  line-height: 1.5;
+}
+
 .search-controls {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 7rem auto;
@@ -1129,6 +2508,13 @@ onBeforeUnmount(() => {
 .inline-errors {
   display: grid;
   gap: 0.35rem;
+}
+
+.search-submit-hint {
+  margin: 0;
+  color: var(--p-text-muted-color);
+  font-size: 0.9rem;
+  line-height: 1.55;
 }
 
 .status-card-body {
@@ -1369,6 +2755,22 @@ onBeforeUnmount(() => {
 
   .search-controls {
     grid-template-columns: 1fr;
+  }
+
+  .provider-fields-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .provider-panel-header {
+    flex-direction: column;
+  }
+
+  .provider-field--wide {
+    grid-column: auto;
+  }
+
+  .provider-field--full {
+    grid-column: auto;
   }
 
   .dentist-card-header {

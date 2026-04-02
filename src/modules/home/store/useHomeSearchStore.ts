@@ -15,12 +15,11 @@ import {
   type BatchDentistsProviderResult,
   type CrawlBatchResponse,
   type CrawlJobResponse,
-  type HapvidaPayload,
   type JobDentist,
-  type OdontoprevPayload,
+  type ProviderOptionsMap,
+  type QueueBatchProviderOptions,
   type QueueBatchResponse,
   type QueueJobResponse,
-  type SulamericaPayload,
 } from '../api'
 
 export type StateOption = {
@@ -42,6 +41,10 @@ export type StartCrawlResult =
       type: 'batch'
       response: QueueBatchResponse
     }
+
+export type StartCrawlOptions = {
+  providerOptions?: QueueBatchProviderOptions
+}
 
 const stateOptions: StateOption[] = [
   { name: 'Acre', code: 'AC' },
@@ -202,13 +205,18 @@ export const useHomeSearchStore = defineStore('home-search', () => {
     return Object.keys(errors).length === 0
   }
 
-  function buildRequestPayload() {
-    const basePayload: OdontoprevPayload | HapvidaPayload | SulamericaPayload = {
+  function buildProviderPayload<K extends keyof ProviderOptionsMap>(
+    provider: K,
+    providerOptions?: QueueBatchProviderOptions,
+  ) {
+    return {
       cidade: city.value.trim(),
       uf: selectedState.value?.code ?? '',
-    }
-
-    return basePayload
+      ...providerOptions?.[provider],
+    } as {
+      cidade: string
+      uf: string
+    } & ProviderOptionsMap[K]
   }
 
   function createQueuedJobSnapshot(jobId: string, providerValue: CrawlProvider) {
@@ -247,7 +255,7 @@ export const useHomeSearchStore = defineStore('home-search', () => {
         status: 'queued',
         totalDentists: null,
         errorMessage: null,
-        options: {},
+        options: job.options ?? {},
         queuedAt: new Date().toISOString(),
         startedAt: null,
         finishedAt: null,
@@ -264,7 +272,10 @@ export const useHomeSearchStore = defineStore('home-search', () => {
     selectedProviders.value = orderProviders([...selectedProviders.value, providerValue])
   }
 
-  async function startCrawl(token: string): Promise<StartCrawlResult | null> {
+  async function startCrawl(
+    token: string,
+    options: StartCrawlOptions = {},
+  ): Promise<StartCrawlResult | null> {
     resetFeedback()
     clearCurrentResults()
     clearCurrentTracking()
@@ -278,7 +289,11 @@ export const useHomeSearchStore = defineStore('home-search', () => {
     try {
       if (selectedProviders.value.length === 1) {
         const providerValue = selectedProviders.value[0]!
-        const response = await queueCrawler(providerValue, buildRequestPayload(), token)
+        const response = await queueCrawler(
+          providerValue,
+          buildProviderPayload(providerValue, options.providerOptions),
+          token,
+        )
 
         currentJobId.value = response.jobId
         createQueuedJobSnapshot(response.jobId, providerValue)
@@ -291,8 +306,10 @@ export const useHomeSearchStore = defineStore('home-search', () => {
 
       const response = await queueCrawlerBatch(
         {
-          ...buildRequestPayload(),
+          cidade: city.value.trim(),
+          uf: selectedState.value?.code ?? '',
           providers: selectedProviders.value,
+          providerOptions: options.providerOptions,
         },
         token,
       )

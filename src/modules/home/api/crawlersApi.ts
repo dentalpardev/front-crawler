@@ -1,6 +1,11 @@
 import { apiRequest } from '@/shared/api'
 import type { CrawlBatchStatus, CrawlJobStatus, CrawlProvider } from '@/shared/types'
 
+export type SelectOption = {
+  codigo: string
+  nome: string
+}
+
 export type QueueJobResponse = {
   jobId: string
   status: 'queued'
@@ -14,6 +19,7 @@ export type QueueBatchResponse = {
     jobId: string
     provider: CrawlProvider
     status: 'queued'
+    options?: Record<string, unknown>
   }>
   message: string
 }
@@ -111,28 +117,152 @@ export type BatchDentistsResponse = {
 export type OdontoprevPayload = {
   cidade: string
   uf: string
+  codigoRede?: string
+  codigoPlano?: string
+  codigoEspecialidade?: string
+  isEspecialista?: boolean
+  isAtendeWhatsApp?: boolean
+  nomeDentista?: string
+  acessibilidade?: string
+  idioma?: string
 }
 
 export type HapvidaPayload = {
   cidade: string
   uf: string
+  tipoContrato: string
+  produto: string
+  servico: string
+  especialidade: string
+  bairro: string
 }
 
 export type SulamericaPayload = {
   cidade: string
   uf: string
+  produto: string
+  plano: string
+  bairro?: string
+  area?: string
+  horarioInicial?: string
+  horarioFinal?: string
 }
+
+export type OdontoprevProviderOptions = Omit<OdontoprevPayload, 'cidade' | 'uf'>
+export type HapvidaProviderOptions = Omit<HapvidaPayload, 'cidade' | 'uf'>
+export type SulamericaProviderOptions = Omit<SulamericaPayload, 'cidade' | 'uf'>
+
+export type ProviderOptionsMap = {
+  odontoprev: OdontoprevProviderOptions
+  hapvida: HapvidaProviderOptions
+  sulamerica: SulamericaProviderOptions
+}
+
+export type QueueBatchProviderOptions = Partial<{
+  [K in CrawlProvider]: ProviderOptionsMap[K]
+}>
 
 export type QueueBatchPayload = {
   cidade: string
   uf: string
   providers: CrawlProvider[]
+  providerOptions?: QueueBatchProviderOptions
+}
+
+export type OdontoprevFiltersResponse = {
+  redes: SelectOption[]
+  planos: SelectOption[]
+  especialidades: SelectOption[]
+  planosPorCodigo: Record<string, string[]>
+  totalRedes?: number
+  totalPlanos?: number
+}
+
+export type QueryParams = Record<string, string | number | boolean | undefined | null>
+
+type HapvidaProductsQuery = {
+  tipoContrato: string
+}
+
+type HapvidaStatesQuery = {
+  produto: string
+}
+
+type HapvidaCitiesQuery = {
+  produto: string
+  uf: string
+}
+
+type HapvidaServicesQuery = {
+  produto: string
+  uf: string
+  cidade: string
+}
+
+type HapvidaSpecialtiesQuery = {
+  produto: string
+  uf: string
+  cidade: string
+  servico: string
+}
+
+type HapvidaNeighborhoodsQuery = {
+  produto: string
+  uf: string
+  cidade: string
+  servico: string
+  especialidade: string
+}
+
+type SulamericaPlansQuery = {
+  produto: string
+}
+
+type SulamericaCitiesQuery = {
+  uf: string
+  produto: string
+  plano: string
+}
+
+type SulamericaNeighborhoodsQuery = {
+  uf: string
+  cidade: string
+  produto: string
+  plano: string
+}
+
+type SulamericaAreasQuery = {
+  uf: string
+  cidade: string
+  produto: string
+  plano: string
+  bairro: string
 }
 
 type QueuePayloadMap = {
   odontoprev: OdontoprevPayload
   hapvida: HapvidaPayload
   sulamerica: SulamericaPayload
+}
+
+function buildPathWithQuery(path: string, params?: QueryParams) {
+  if (!params) {
+    return path
+  }
+
+  const searchParams = new URLSearchParams()
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === '') {
+      continue
+    }
+
+    searchParams.set(key, String(value))
+  }
+
+  const query = searchParams.toString()
+
+  return query ? `${path}?${query}` : path
 }
 
 export function queueCrawler<P extends CrawlProvider>(
@@ -153,6 +283,104 @@ export function queueCrawlerBatch(payload: QueueBatchPayload, token: string) {
     method: 'POST',
     token,
   })
+}
+
+export function getOdontoprevFilters(token: string) {
+  return apiRequest<OdontoprevFiltersResponse>('/crawlers/odontoprev/filters', { token })
+}
+
+export function getOdontoprevNetworks(token: string) {
+  return apiRequest<SelectOption[]>('/crawlers/odontoprev/filters/networks', { token })
+}
+
+export function getOdontoprevPlans(token: string) {
+  return apiRequest<SelectOption[]>('/crawlers/odontoprev/filters/plans', { token })
+}
+
+export function getOdontoprevSpecialties(token: string) {
+  return apiRequest<SelectOption[]>('/crawlers/odontoprev/filters/specialties', { token })
+}
+
+export function getHapvidaContractTypes(token: string) {
+  return apiRequest<SelectOption[]>('/crawlers/hapvida/filters/contract-types', { token })
+}
+
+export function getHapvidaProducts(params: HapvidaProductsQuery, token: string) {
+  return apiRequest<SelectOption[]>(
+    buildPathWithQuery('/crawlers/hapvida/filters/products', params),
+    { token },
+  )
+}
+
+export function getHapvidaStates(params: HapvidaStatesQuery, token: string) {
+  return apiRequest<SelectOption[]>(
+    buildPathWithQuery('/crawlers/hapvida/filters/states', params),
+    { token },
+  )
+}
+
+export function getHapvidaCities(params: HapvidaCitiesQuery, token: string) {
+  return apiRequest<SelectOption[]>(
+    buildPathWithQuery('/crawlers/hapvida/filters/cities', params),
+    { token },
+  )
+}
+
+export function getHapvidaServices(params: HapvidaServicesQuery, token: string) {
+  return apiRequest<SelectOption[]>(
+    buildPathWithQuery('/crawlers/hapvida/filters/services', params),
+    { token },
+  )
+}
+
+export function getHapvidaSpecialties(params: HapvidaSpecialtiesQuery, token: string) {
+  return apiRequest<SelectOption[]>(
+    buildPathWithQuery('/crawlers/hapvida/filters/specialties', params),
+    { token },
+  )
+}
+
+export function getHapvidaNeighborhoods(params: HapvidaNeighborhoodsQuery, token: string) {
+  return apiRequest<SelectOption[]>(
+    buildPathWithQuery('/crawlers/hapvida/filters/neighborhoods', params),
+    { token },
+  )
+}
+
+export function getSulamericaProducts(token: string) {
+  return apiRequest<SelectOption[]>('/crawlers/sulamerica/filters/products', { token })
+}
+
+export function getSulamericaPlans(params: SulamericaPlansQuery, token: string) {
+  return apiRequest<SelectOption[]>(
+    buildPathWithQuery('/crawlers/sulamerica/filters/plans', params),
+    { token },
+  )
+}
+
+export function getSulamericaCities(params: SulamericaCitiesQuery, token: string) {
+  return apiRequest<SelectOption[]>(
+    buildPathWithQuery('/crawlers/sulamerica/filters/cities', params),
+    { token },
+  )
+}
+
+export function getSulamericaNeighborhoods(params: SulamericaNeighborhoodsQuery, token: string) {
+  return apiRequest<SelectOption[]>(
+    buildPathWithQuery('/crawlers/sulamerica/filters/neighborhoods', params),
+    { token },
+  )
+}
+
+export function getSulamericaAreas(params: SulamericaAreasQuery, token: string) {
+  return apiRequest<SelectOption[]>(
+    buildPathWithQuery('/crawlers/sulamerica/filters/areas', params),
+    { token },
+  )
+}
+
+export function getSulamericaHours(token: string) {
+  return apiRequest<SelectOption[]>('/crawlers/sulamerica/filters/hours', { token })
 }
 
 export function getCrawlJob(jobId: string, token: string) {
