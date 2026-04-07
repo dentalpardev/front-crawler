@@ -63,6 +63,7 @@ export type JobDentist = {
   provider: CrawlProvider
   externalId: string | null
   nome: string
+  area: string | null
   cro: string | null
   nomeFantasia: string | null
   email: string | null
@@ -134,7 +135,7 @@ export type HapvidaPayload = {
   produto: string
   servico: string
   especialidade: string
-  bairro: string
+  bairro?: string
 }
 
 export type SulamericaPayload = {
@@ -236,7 +237,7 @@ type SulamericaAreasQuery = {
   cidade: string
   produto: string
   plano: string
-  bairro: string
+  bairro?: string
 }
 
 type QueuePayloadMap = {

@@ -23,6 +23,7 @@ export {
   queueCrawler,
   queueCrawlerBatch,
 } from './crawlersApi'
+export { getMunicipalitiesByState } from './locationsApi'
 export type {
   BatchDentistsProviderResult,
   BatchDentistsResponse,
@@ -45,3 +46,4 @@ export type {
   OdontoprevProviderOptions,
   SulamericaProviderOptions,
 } from './crawlersApi'
+export type { MunicipalityOption } from './locationsApi'

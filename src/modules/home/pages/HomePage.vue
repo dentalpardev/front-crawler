@@ -5,11 +5,9 @@ import { storeToRefs } from 'pinia'
 import Button from 'primevue/button'
 import Card from 'primevue/card'
 import Checkbox from 'primevue/checkbox'
-import Fieldset from 'primevue/fieldset'
-import InputGroup from 'primevue/inputgroup'
-import InputGroupAddon from 'primevue/inputgroupaddon'
 import InputText from 'primevue/inputtext'
 import Message from 'primevue/message'
+import Paginator from 'primevue/paginator'
 import ProgressSpinner from 'primevue/progressspinner'
 import Select from 'primevue/select'
 import Skeleton from 'primevue/skeleton'
@@ -22,6 +20,7 @@ import { isApiError } from '@/shared/api'
 import type { CrawlBatchStatus, CrawlJobStatus, CrawlProvider } from '@/shared/types'
 import { AppTopbar } from '@/shared/ui'
 import {
+  getMunicipalitiesByState,
   getHapvidaCities,
   getHapvidaContractTypes,
   getHapvidaNeighborhoods,
@@ -37,6 +36,7 @@ import {
 } from '../api'
 import type {
   DentistSpecialty,
+  MunicipalityOption,
   OdontoprevProviderOptions,
   QueueBatchProviderOptions,
   SelectOption,
@@ -89,6 +89,13 @@ const providerErrors = reactive<Record<CrawlProvider, ProviderFieldErrors>>({
 })
 
 const activeProviderPanel = ref<CrawlProvider | null>(null)
+const resultsFirst = ref(0)
+const resultsRows = ref(12)
+const isLoadingMunicipalities = ref(false)
+const municipalityLoadError = ref('')
+const municipalityOptions = ref<MunicipalityOption[]>([])
+const municipalityOptionsByState = reactive<Record<string, MunicipalityOption[]>>({})
+let municipalityRequestId = 0
 
 const providerLoadErrors = reactive<Record<CrawlProvider, string>>({
   odontoprev: '',
@@ -208,18 +215,30 @@ const statusLabel = computed(() => formatStatusLabel(activeStatus.value))
 
 const providerHelperText = computed(() => {
   if (isBatchSelection.value) {
-    return `${selectedProviders.value.length} providers serao executados em lote para a mesma cidade e UF.`
+    return `${selectedProviders.value.length} providers serao executados em lote para a mesma UF e municipio.`
   }
 
   if (primaryProvider.value === 'odontoprev') {
-    return 'Fluxo mais simples: basta informar cidade e UF.'
+    return 'Fluxo mais simples: basta selecionar UF e municipio.'
   }
 
   if (primaryProvider.value === 'hapvida') {
     return 'Os parametros internos da busca agora sao resolvidos pelo backend.'
   }
 
-  return 'Cidade e UF ja sao suficientes para iniciar a coleta.'
+  return 'UF e municipio ja sao suficientes para iniciar a coleta.'
+})
+
+const municipalityPlaceholder = computed(() => {
+  if (!selectedState.value) {
+    return 'Selecione a UF primeiro'
+  }
+
+  if (isLoadingMunicipalities.value) {
+    return 'Carregando municipios...'
+  }
+
+  return 'Selecione o municipio'
 })
 
 const searchStateOptions = computed(() => {
@@ -246,8 +265,7 @@ const hasRequiredProviderFilters = computed(() => {
         hapvidaForm.tipoContrato &&
           hapvidaForm.produto &&
           hapvidaForm.servico &&
-          hapvidaForm.especialidade &&
-          hapvidaForm.bairro,
+          hapvidaForm.especialidade,
       )
     }
 
@@ -289,6 +307,18 @@ const displayDentists = computed(() => {
 
   return currentDentists.value
 })
+
+const paginatedDentists = computed(() =>
+  displayDentists.value.slice(resultsFirst.value, resultsFirst.value + resultsRows.value),
+)
+
+const shouldShowResultsPaginator = computed(() => displayDentists.value.length > resultsRows.value)
+
+const resultsPaginatorTemplate = {
+  '640px': 'PrevPageLink CurrentPageReport NextPageLink',
+  '960px': 'FirstPageLink PrevPageLink CurrentPageReport NextPageLink LastPageLink',
+  default: 'FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink RowsPerPageDropdown',
+}
 
 const displayDentistsTotal = computed(() => {
   if (currentBatch.value) {
@@ -403,6 +433,40 @@ function trimValue(value: string) {
   return value.trim()
 }
 
+async function loadMunicipalityOptions(stateCode: string) {
+  municipalityLoadError.value = ''
+
+  if (municipalityOptionsByState[stateCode]) {
+    municipalityOptions.value = municipalityOptionsByState[stateCode]
+    return
+  }
+
+  const currentRequestId = ++municipalityRequestId
+  isLoadingMunicipalities.value = true
+
+  try {
+    const options = await getMunicipalitiesByState(stateCode)
+
+    if (currentRequestId !== municipalityRequestId || selectedState.value?.code !== stateCode) {
+      return
+    }
+
+    municipalityOptionsByState[stateCode] = options
+    municipalityOptions.value = options
+  } catch {
+    if (currentRequestId !== municipalityRequestId || selectedState.value?.code !== stateCode) {
+      return
+    }
+
+    municipalityOptions.value = []
+    municipalityLoadError.value = 'Nao foi possivel carregar os municipios desta UF.'
+  } finally {
+    if (currentRequestId === municipalityRequestId) {
+      isLoadingMunicipalities.value = false
+    }
+  }
+}
+
 function handleOdontoprevNetworkChange(value: string | null) {
   odontoprevForm.codigoRede = value ?? ''
 
@@ -427,14 +491,38 @@ function normalizeCatalogValue(value: string) {
     .toUpperCase()
 }
 
+function findMatchingCatalogOption(options: SelectOption[], value: string) {
+  const normalizedValue = normalizeCatalogValue(value)
+
+  return (
+    options.find(
+      (option) =>
+        normalizeCatalogValue(option.codigo) === normalizedValue ||
+        normalizeCatalogValue(option.nome) === normalizedValue,
+    ) ?? null
+  )
+}
+
+function getHapvidaResolvedCity() {
+  const currentCity = trimValue(city.value)
+
+  if (!currentCity) {
+    return ''
+  }
+
+  if (hapvidaCatalog.cities.length === 0) {
+    return currentCity
+  }
+
+  return findMatchingCatalogOption(hapvidaCatalog.cities, currentCity)?.codigo ?? ''
+}
+
 const isHapvidaCityCompatible = computed(() => {
   if (!selectedProviders.value.includes('hapvida') || !trimValue(city.value) || hapvidaCatalog.cities.length === 0) {
     return true
   }
 
-  const currentCity = normalizeCatalogValue(city.value)
-
-  return hapvidaCatalog.cities.some((option) => normalizeCatalogValue(option.codigo) === currentCity)
+  return Boolean(findMatchingCatalogOption(hapvidaCatalog.cities, city.value))
 })
 
 const isSulamericaCityCompatible = computed(() => {
@@ -595,6 +683,10 @@ async function loadHapvidaCityOptions() {
       { produto: hapvidaForm.produto, uf: selectedState.value.code },
       authStore.token,
     )
+
+    if (getHapvidaResolvedCity()) {
+      await loadHapvidaServiceOptions()
+    }
   } catch (error) {
     await handleCatalogFailure('hapvida', error, 'Nao foi possivel carregar as cidades da Hapvida.')
   } finally {
@@ -607,6 +699,13 @@ async function loadHapvidaServiceOptions() {
     return
   }
 
+  const resolvedCity = getHapvidaResolvedCity()
+
+  if (!resolvedCity) {
+    hapvidaCatalog.services = []
+    return
+  }
+
   loadingState.hapvida.services = true
   clearProviderLoadError('hapvida')
 
@@ -615,7 +714,7 @@ async function loadHapvidaServiceOptions() {
       {
         produto: hapvidaForm.produto,
         uf: selectedState.value.code,
-        cidade: trimValue(city.value),
+        cidade: resolvedCity,
       },
       authStore.token,
     )
@@ -637,6 +736,13 @@ async function loadHapvidaSpecialtyOptions() {
     return
   }
 
+  const resolvedCity = getHapvidaResolvedCity()
+
+  if (!resolvedCity) {
+    hapvidaCatalog.specialties = []
+    return
+  }
+
   loadingState.hapvida.specialties = true
   clearProviderLoadError('hapvida')
 
@@ -645,7 +751,7 @@ async function loadHapvidaSpecialtyOptions() {
       {
         produto: hapvidaForm.produto,
         uf: selectedState.value.code,
-        cidade: trimValue(city.value),
+        cidade: resolvedCity,
         servico: hapvidaForm.servico,
       },
       authStore.token,
@@ -669,6 +775,13 @@ async function loadHapvidaNeighborhoodOptions() {
     return
   }
 
+  const resolvedCity = getHapvidaResolvedCity()
+
+  if (!resolvedCity) {
+    hapvidaCatalog.neighborhoods = []
+    return
+  }
+
   loadingState.hapvida.neighborhoods = true
   clearProviderLoadError('hapvida')
 
@@ -677,7 +790,7 @@ async function loadHapvidaNeighborhoodOptions() {
       {
         produto: hapvidaForm.produto,
         uf: selectedState.value.code,
-        cidade: trimValue(city.value),
+        cidade: resolvedCity,
         servico: hapvidaForm.servico,
         especialidade: hapvidaForm.especialidade,
       },
@@ -767,6 +880,7 @@ async function loadSulamericaCityOptions() {
       },
       authStore.token,
     )
+
   } catch (error) {
     await handleCatalogFailure('sulamerica', error, 'Nao foi possivel carregar as cidades da SulAmerica.')
   } finally {
@@ -802,10 +916,6 @@ function validateProviderFilters() {
 
       if (!hapvidaForm.especialidade) {
         providerErrors.hapvida.especialidade = 'Selecione a especialidade.'
-      }
-
-      if (!hapvidaForm.bairro) {
-        providerErrors.hapvida.bairro = 'Selecione o bairro.'
       }
     }
 
@@ -874,7 +984,7 @@ function buildProviderOptionsPayload(): QueueBatchProviderOptions {
       produto: hapvidaForm.produto,
       servico: hapvidaForm.servico,
       especialidade: hapvidaForm.especialidade,
-      bairro: hapvidaForm.bairro,
+      ...(hapvidaForm.bairro ? { bairro: hapvidaForm.bairro } : {}),
     }
   }
 
@@ -975,6 +1085,13 @@ function getDentistSpecialties(dentist: (typeof displayDentists.value)[number]) 
     .filter((value): value is string => Boolean(value))
 }
 
+function getDentistAreas(dentist: (typeof displayDentists.value)[number]) {
+  return String(dentist.area ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value): value is string => Boolean(value))
+}
+
 function buildDentistLegendFlags(dentist: (typeof displayDentists.value)[number]) {
   return [
     dentist.programaAcreditacao ? 'Acreditacao' : null,
@@ -1006,6 +1123,7 @@ function exportDentistsAsCsv() {
   const headers = [
     'provider',
     'nome',
+    'area',
     'nome_fantasia',
     'cro',
     'telefone',
@@ -1029,6 +1147,7 @@ function exportDentistsAsCsv() {
     [
       formatProviderLabel(dentist.provider),
       dentist.nome,
+      dentist.area,
       dentist.nomeFantasia,
       dentist.cro,
       dentist.telefone,
@@ -1238,6 +1357,27 @@ async function refreshCurrentStatus() {
 }
 
 watch(
+  () => [dentistsJobId.value, batchDentistsBatchId.value],
+  () => {
+    resultsFirst.value = 0
+  },
+)
+
+watch(
+  () => [displayDentists.value.length, resultsRows.value] as const,
+  ([total, rows]) => {
+    if (total === 0) {
+      resultsFirst.value = 0
+      return
+    }
+
+    if (resultsFirst.value >= total) {
+      resultsFirst.value = Math.max(0, Math.floor((total - 1) / rows) * rows)
+    }
+  },
+)
+
+watch(
   () => [...selectedProviders.value],
   (providers) => {
     resetProviderErrors()
@@ -1305,6 +1445,16 @@ watch(
       return
     }
 
+    city.value = ''
+    municipalityLoadError.value = ''
+    municipalityRequestId += 1
+    isLoadingMunicipalities.value = false
+    municipalityOptions.value = value ? municipalityOptionsByState[value] ?? [] : []
+
+    if (value) {
+      void loadMunicipalityOptions(value)
+    }
+
     if (hapvidaForm.produto) {
       resetHapvidaServicesAndBelow()
       void loadHapvidaCityOptions()
@@ -1325,6 +1475,8 @@ watch(
       !searchStateOptions.value.some((option) => option.code === selectedState.value?.code)
     ) {
       selectedState.value = null
+      city.value = ''
+      municipalityOptions.value = []
     }
   },
 )
@@ -1508,8 +1660,9 @@ onBeforeUnmount(() => {
             <p class="hero-eyebrow">Busca odontologica</p>
             <h1>Encontre dentistas credenciados</h1>
             <p>
-              Pesquise por cidade e estado para encontrar profissionais credenciados de cada
-              provider ou rode varios providers ao mesmo tempo em lote.
+              Selecione primeiro a UF e depois o municipio para evitar erros de digitacao,
+              encontrar profissionais credenciados de cada provider e rodar varios providers ao
+              mesmo tempo em lote.
             </p>
           </template>
         </div>
@@ -1544,33 +1697,38 @@ onBeforeUnmount(() => {
 
           <Card class="search-card" role="search">
             <template #content>
-                <div class="search-card-body">
-                  <div class="search-controls">
-                  <InputGroup class="city-group">
-                    <InputGroupAddon>
-                      <i class="pi pi-send" aria-hidden="true" />
-                    </InputGroupAddon>
-                    <InputText
-                      v-model="city"
-                      :disabled="selectedProviders.length === 0"
-                      :invalid="Boolean(formErrors.cidade)"
-                      aria-label="Cidade"
-                      autocomplete="address-level2"
-                      fluid
-                      placeholder="Digite a cidade..."
-                    />
-                  </InputGroup>
-
+              <div class="search-card-body">
+                <div class="search-controls">
                   <Select
                     v-model="selectedState"
                     :disabled="selectedProviders.length === 0"
                     :invalid="Boolean(formErrors.uf)"
                     :options="searchStateOptions"
-                    aria-label="Estado"
+                    aria-label="UF"
                     class="state-select"
                     fluid
                     option-label="code"
-                    placeholder="Estado"
+                    placeholder="UF"
+                  />
+
+                  <Select
+                    v-model="city"
+                    :disabled="selectedProviders.length === 0 || !selectedState"
+                    :filter="Boolean(selectedState)"
+                    :invalid="Boolean(formErrors.cidade)"
+                    :loading="isLoadingMunicipalities"
+                    :options="municipalityOptions"
+                    :virtualScrollerOptions="{ itemSize: 38 }"
+                    aria-label="Municipio"
+                    class="municipality-select"
+                    filterPlaceholder="Busque o municipio"
+                    fluid
+                    option-label="name"
+                    option-value="name"
+                    :placeholder="municipalityPlaceholder"
+                    resetFilterOnClear
+                    resetFilterOnHide
+                    showClear
                   />
 
                   <Button
@@ -1581,14 +1739,19 @@ onBeforeUnmount(() => {
                     icon="pi pi-search"
                     @click="handleStartCrawl"
                   />
-                  </div>
+                </div>
 
-                  <p v-if="selectedProviders.length > 0" class="search-submit-hint">
-                    A busca final e confirmada pelo botao acima. Cidade e UF definidos aqui valem para todos os providers selecionados.
-                  </p>
+                <p v-if="selectedProviders.length > 0" class="search-submit-hint">
+                  A busca final e confirmada pelo botao acima. UF e municipio definidos aqui
+                  valem para todos os providers selecionados.
+                </p>
 
                 <Message v-if="formError" severity="error" variant="outlined">
                   {{ formError }}
+                </Message>
+
+                <Message v-if="municipalityLoadError" severity="error" variant="outlined">
+                  {{ municipalityLoadError }}
                 </Message>
 
                 <div v-if="formErrors.cidade || formErrors.uf || formErrors.providers" class="inline-errors">
@@ -1610,8 +1773,8 @@ onBeforeUnmount(() => {
             <div class="provider-panel-switcher">
               <span class="section-label">Filtros por provider</span>
               <p class="provider-panel-help">
-                Configure um provider por vez. Quando o catalogo do provider definir a cidade,
-                ela sera sincronizada automaticamente com a busca principal.
+                Configure um provider por vez. Quando o catalogo do provider definir o municipio,
+                ele sera sincronizado automaticamente com a busca principal.
               </p>
               <div class="provider-panel-switcher-buttons" role="tablist" aria-label="Filtros por provider">
                 <Button
@@ -1688,75 +1851,84 @@ onBeforeUnmount(() => {
                     <small>{{ providerErrors.odontoprev.selection }}</small>
                   </div>
 
-                  <Fieldset
-                    legend="Filtros opcionais"
-                    :toggleable="true"
-                    :collapsed="true"
-                    class="provider-advanced"
-                  >
-                    <div class="provider-fields-grid">
-                      <div class="provider-field">
-                        <label for="odontoprev-especialidade">Especialidade</label>
-                        <Select
-                          v-model="odontoprevForm.codigoEspecialidade"
-                          input-id="odontoprev-especialidade"
-                          :loading="loadingState.odontoprev.filters"
-                          :options="odontoprevCatalog.especialidades"
-                          option-label="nome"
-                          option-value="codigo"
-                          placeholder="Especialidade"
-                          show-clear
-                        />
+                  <details class="provider-subsection provider-subsection--collapsible">
+                    <summary class="provider-subsection-summary">
+                      <div class="provider-subsection-title">
+                        <span aria-hidden="true" class="provider-subsection-title-line" />
+                        <h3>Filtros opcionais</h3>
+                      </div>
+                      <i aria-hidden="true" class="pi pi-chevron-down provider-subsection-chevron" />
+                    </summary>
+
+                    <div class="provider-subsection-content">
+                      <div class="provider-subsection-copy">
+                        <p>Refine a busca com criterios complementares sem alterar UF e municipio.</p>
                       </div>
 
-                      <div class="provider-field">
-                        <label for="odontoprev-nome">Nome do dentista</label>
-                        <InputText
-                          v-model="odontoprevForm.nomeDentista"
-                          id="odontoprev-nome"
-                          placeholder="Digite o nome do dentista"
-                        />
+                      <div class="provider-fields-grid">
+                        <div class="provider-field">
+                          <label for="odontoprev-especialidade">Especialidade</label>
+                          <Select
+                            v-model="odontoprevForm.codigoEspecialidade"
+                            input-id="odontoprev-especialidade"
+                            :loading="loadingState.odontoprev.filters"
+                            :options="odontoprevCatalog.especialidades"
+                            option-label="nome"
+                            option-value="codigo"
+                            placeholder="Especialidade"
+                            show-clear
+                          />
+                        </div>
+
+                        <div class="provider-field">
+                          <label for="odontoprev-nome">Nome do dentista</label>
+                          <InputText
+                            v-model="odontoprevForm.nomeDentista"
+                            id="odontoprev-nome"
+                            placeholder="Digite o nome do dentista"
+                          />
+                        </div>
+
+                        <div class="provider-field">
+                          <label for="odontoprev-idioma">Idioma</label>
+                          <InputText
+                            v-model="odontoprevForm.idioma"
+                            id="odontoprev-idioma"
+                            placeholder="Ex.: INGLES"
+                          />
+                        </div>
                       </div>
 
-                      <div class="provider-field">
-                        <label for="odontoprev-idioma">Idioma</label>
-                        <InputText
-                          v-model="odontoprevForm.idioma"
-                          id="odontoprev-idioma"
-                          placeholder="Ex.: INGLES"
-                        />
+                      <div class="provider-binary-grid">
+                        <label class="binary-option" for="odontoprev-especialista">
+                          <Checkbox
+                            v-model="odontoprevForm.isEspecialista"
+                            binary
+                            input-id="odontoprev-especialista"
+                          />
+                          <span>Somente especialista</span>
+                        </label>
+
+                        <label class="binary-option" for="odontoprev-whatsapp">
+                          <Checkbox
+                            v-model="odontoprevForm.isAtendeWhatsApp"
+                            binary
+                            input-id="odontoprev-whatsapp"
+                          />
+                          <span>Atende WhatsApp</span>
+                        </label>
+
+                        <label class="binary-option" for="odontoprev-acessibilidade">
+                          <Checkbox
+                            v-model="odontoprevForm.acessibilidade"
+                            binary
+                            input-id="odontoprev-acessibilidade"
+                          />
+                          <span>Acessibilidade</span>
+                        </label>
                       </div>
                     </div>
-
-                    <div class="provider-binary-grid">
-                      <label class="binary-option" for="odontoprev-especialista">
-                        <Checkbox
-                          v-model="odontoprevForm.isEspecialista"
-                          binary
-                          input-id="odontoprev-especialista"
-                        />
-                        <span>Somente especialista</span>
-                      </label>
-
-                      <label class="binary-option" for="odontoprev-whatsapp">
-                        <Checkbox
-                          v-model="odontoprevForm.isAtendeWhatsApp"
-                          binary
-                          input-id="odontoprev-whatsapp"
-                        />
-                        <span>Atende WhatsApp</span>
-                      </label>
-
-                      <label class="binary-option" for="odontoprev-acessibilidade">
-                        <Checkbox
-                          v-model="odontoprevForm.acessibilidade"
-                          binary
-                          input-id="odontoprev-acessibilidade"
-                        />
-                        <span>Acessibilidade</span>
-                      </label>
-                    </div>
-                  </Fieldset>
+                  </details>
                 </div>
               </template>
             </Card>
@@ -1767,7 +1939,7 @@ onBeforeUnmount(() => {
                   <div class="provider-panel-header">
                     <div>
                       <h2>Filtros Hapvida</h2>
-                      <p>Configure apenas os filtros complementares. A cidade e a UF desta busca continuam vindo do topo da tela.</p>
+                      <p>Configure apenas os filtros complementares. O municipio e a UF desta busca continuam vindo do topo da tela.</p>
                     </div>
                     <Tag :class="getProviderTone('hapvida')" rounded severity="secondary" value="Hapvida" />
                   </div>
@@ -1787,7 +1959,7 @@ onBeforeUnmount(() => {
                     size="small"
                     variant="outlined"
                   >
-                    A cidade informada no topo nao apareceu no catalogo atual da Hapvida para este produto e UF.
+                    O municipio selecionado no topo nao apareceu no catalogo atual da Hapvida para este produto e UF.
                   </Message>
 
                   <div class="provider-fields-grid">
@@ -1827,9 +1999,15 @@ onBeforeUnmount(() => {
                       <Select
                         v-model="hapvidaForm.servico"
                         input-id="hapvida-servico"
-                        :disabled="!trimValue(city) || !selectedState || !hapvidaForm.produto || !isHapvidaCityCompatible"
+                        :disabled="
+                          !trimValue(city) ||
+                          !selectedState ||
+                          !hapvidaForm.produto ||
+                          !isHapvidaCityCompatible ||
+                          loadingState.hapvida.cities
+                        "
                         :invalid="Boolean(providerErrors.hapvida.servico)"
-                        :loading="loadingState.hapvida.services"
+                        :loading="loadingState.hapvida.cities || loadingState.hapvida.services"
                         :options="hapvidaCatalog.services"
                         option-label="nome"
                         option-value="codigo"
@@ -1855,7 +2033,10 @@ onBeforeUnmount(() => {
                     </div>
 
                     <div class="provider-field">
-                      <label for="hapvida-bairro">Bairro</label>
+                      <label for="hapvida-bairro">
+                        Bairro
+                        <span class="provider-field-optional">Opcional</span>
+                      </label>
                       <Select
                         v-model="hapvidaForm.bairro"
                         input-id="hapvida-bairro"
@@ -1876,7 +2057,6 @@ onBeforeUnmount(() => {
                     <small v-if="providerErrors.hapvida.produto">{{ providerErrors.hapvida.produto }}</small>
                     <small v-if="providerErrors.hapvida.servico">{{ providerErrors.hapvida.servico }}</small>
                     <small v-if="providerErrors.hapvida.especialidade">{{ providerErrors.hapvida.especialidade }}</small>
-                    <small v-if="providerErrors.hapvida.bairro">{{ providerErrors.hapvida.bairro }}</small>
                   </div>
                 </div>
               </template>
@@ -1888,7 +2068,7 @@ onBeforeUnmount(() => {
                   <div class="provider-panel-header">
                     <div>
                       <h2>Filtros SulAmerica</h2>
-                      <p>Escolha produto e plano e, se quiser, refine apenas a janela de horario. Cidade e UF continuam vindo do topo.</p>
+                      <p>Escolha produto e plano e, se quiser, refine apenas a janela de horario. Municipio e UF continuam vindo do topo.</p>
                     </div>
                     <Tag :class="getProviderTone('sulamerica')" rounded severity="secondary" value="SulAmerica" />
                   </div>
@@ -1908,7 +2088,7 @@ onBeforeUnmount(() => {
                     size="small"
                     variant="outlined"
                   >
-                    A cidade informada no topo nao apareceu no catalogo atual da SulAmerica para o produto, plano e UF selecionados.
+                    O municipio selecionado no topo nao apareceu no catalogo atual da SulAmerica para o produto, plano e UF selecionados.
                   </Message>
 
                   <div class="provider-fields-grid">
@@ -1944,14 +2124,19 @@ onBeforeUnmount(() => {
                     </div>
                   </div>
 
-                  <Fieldset
-                    legend="Refinar horario"
-                    :toggleable="true"
-                    :collapsed="true"
-                    class="provider-advanced"
-                  >
-                    <div class="provider-fields-grid">
-                      <div class="provider-field">
+                  <section class="provider-subsection">
+                    <div class="provider-subsection-header">
+                      <div class="provider-subsection-copy">
+                        <div class="provider-subsection-title">
+                          <span aria-hidden="true" class="provider-subsection-title-line" />
+                          <h3>Refinar horario</h3>
+                        </div>
+                        <p>Opcional: limite a busca a uma janela de atendimento especifica.</p>
+                      </div>
+                    </div>
+
+                    <div class="provider-fields-grid provider-fields-grid--time-range">
+                      <div class="provider-field provider-field--time-range">
                         <label for="sulamerica-hora-inicial">Horario inicial</label>
                         <Select
                           v-model="sulamericaForm.horarioInicial"
@@ -1965,7 +2150,7 @@ onBeforeUnmount(() => {
                         />
                       </div>
 
-                      <div class="provider-field">
+                      <div class="provider-field provider-field--time-range">
                         <label for="sulamerica-hora-final">Horario final</label>
                         <Select
                           v-model="sulamericaForm.horarioFinal"
@@ -1979,7 +2164,7 @@ onBeforeUnmount(() => {
                         />
                       </div>
                     </div>
-                  </Fieldset>
+                  </section>
 
                   <div v-if="Object.keys(providerErrors.sulamerica).length > 0" class="provider-inline-errors">
                     <small v-if="providerErrors.sulamerica.produto">{{ providerErrors.sulamerica.produto }}</small>
@@ -2074,103 +2259,142 @@ onBeforeUnmount(() => {
           </Card>
         </div>
 
-        <div v-else-if="displayDentists.length > 0" class="results-grid">
-          <article
-            v-for="dentist in displayDentists"
-            :key="dentist.externalId ?? `${dentist.nome}-${dentist.telefone}`"
-            class="dentist-card"
-          >
-            <div class="dentist-card-header">
-              <div>
-                <h3>{{ dentist.nome }}</h3>
-                <p v-if="dentist.nomeFantasia">{{ dentist.nomeFantasia }}</p>
+        <template v-else-if="displayDentists.length > 0">
+          <Paginator
+            v-if="shouldShowResultsPaginator"
+            v-model:first="resultsFirst"
+            v-model:rows="resultsRows"
+            :alwaysShow="false"
+            :rowsPerPageOptions="[12, 24, 48]"
+            :template="resultsPaginatorTemplate"
+            :totalRecords="displayDentists.length"
+            class="results-paginator"
+            currentPageReportTemplate="{first} - {last} de {totalRecords}"
+          />
+
+          <div class="results-grid">
+            <article
+              v-for="dentist in paginatedDentists"
+              :key="dentist.externalId ?? `${dentist.nome}-${dentist.telefone}`"
+              class="dentist-card"
+            >
+              <div class="dentist-card-header">
+                <div>
+                  <h3>{{ dentist.nome }}</h3>
+                  <p v-if="dentist.nomeFantasia">{{ dentist.nomeFantasia }}</p>
+                </div>
+
+                <Tag
+                  :class="['dentist-provider-tag', getProviderTone(dentist.provider)]"
+                  :value="formatProviderLabel(dentist.provider)"
+                  rounded
+                  severity="secondary"
+                />
               </div>
 
-              <Tag
-                :class="['dentist-provider-tag', getProviderTone(dentist.provider)]"
-                :value="formatProviderLabel(dentist.provider)"
-                rounded
-                severity="secondary"
-              />
-            </div>
+              <div class="dentist-card-body">
+                <p v-if="getDentistAddress(dentist)" class="dentist-line">
+                  <i class="pi pi-map-marker" aria-hidden="true" />
+                  <span>{{ getDentistAddress(dentist) }}</span>
+                </p>
 
-            <div class="dentist-card-body">
-              <p v-if="getDentistAddress(dentist)" class="dentist-line">
-                <i class="pi pi-map-marker" aria-hidden="true" />
-                <span>{{ getDentistAddress(dentist) }}</span>
-              </p>
+                <p v-if="dentist.telefone" class="dentist-line">
+                  <i class="pi pi-phone" aria-hidden="true" />
+                  <span>{{ dentist.telefone }}</span>
+                </p>
 
-              <p v-if="dentist.telefone" class="dentist-line">
-                <i class="pi pi-phone" aria-hidden="true" />
-                <span>{{ dentist.telefone }}</span>
-              </p>
+                <p v-if="dentist.whatsapp" class="dentist-line dentist-line--success">
+                  <i class="pi pi-whatsapp" aria-hidden="true" />
+                  <span>{{ dentist.whatsapp }}</span>
+                </p>
 
-              <p v-if="dentist.whatsapp" class="dentist-line dentist-line--success">
-                <i class="pi pi-whatsapp" aria-hidden="true" />
-                <span>{{ dentist.whatsapp }}</span>
-              </p>
+                <p v-if="dentist.email" class="dentist-line">
+                  <i class="pi pi-envelope" aria-hidden="true" />
+                  <span>{{ dentist.email }}</span>
+                </p>
 
-              <p v-if="dentist.email" class="dentist-line">
-                <i class="pi pi-envelope" aria-hidden="true" />
-                <span>{{ dentist.email }}</span>
-              </p>
+                <p v-if="dentist.boaconsultaUrl" class="dentist-line">
+                  <i class="pi pi-external-link" aria-hidden="true" />
+                  <a :href="dentist.boaconsultaUrl" rel="noreferrer" target="_blank">
+                    Abrir perfil
+                  </a>
+                </p>
+              </div>
 
-              <p v-if="dentist.boaconsultaUrl" class="dentist-line">
-                <i class="pi pi-external-link" aria-hidden="true" />
-                <a :href="dentist.boaconsultaUrl" rel="noreferrer" target="_blank">
-                  Abrir perfil
-                </a>
-              </p>
-            </div>
+              <div class="dentist-card-tags">
+                <div v-if="getDentistAreas(dentist).length > 0" class="tag-group">
+                  <span class="tag-group-label">Area de atuacao</span>
+                  <div class="tag-group-list">
+                    <Tag
+                      v-for="area in getDentistAreas(dentist)"
+                      :key="area"
+                      :value="area"
+                      rounded
+                      severity="info"
+                    />
+                  </div>
+                </div>
 
-            <div class="dentist-card-tags">
-              <div class="tag-group">
-                <span class="tag-group-label">Especialidades</span>
-                <div class="tag-group-list">
-                  <Tag
-                    v-if="getDentistSpecialties(dentist).length === 0"
-                    value="Sem especialidade informada"
-                    rounded
-                    severity="secondary"
-                  />
-                  <Tag
-                    v-for="specialty in getDentistSpecialties(dentist)"
-                    :key="specialty"
-                    :value="specialty"
-                    rounded
-                    severity="warn"
-                  />
+                <div class="tag-group">
+                  <span class="tag-group-label">Especialidades</span>
+                  <div class="tag-group-list">
+                    <Tag
+                      v-if="getDentistSpecialties(dentist).length === 0"
+                      value="Sem especialidade informada"
+                      rounded
+                      severity="secondary"
+                    />
+                    <Tag
+                      v-for="specialty in getDentistSpecialties(dentist)"
+                      :key="specialty"
+                      :value="specialty"
+                      rounded
+                      severity="warn"
+                    />
+                  </div>
+                </div>
+
+                <div v-if="hasDentistMetadata(dentist)" class="tag-group">
+                  <span class="tag-group-label">Legendas</span>
+                  <div class="tag-group-list">
+                    <Tag
+                      v-for="highlight in buildDentistHighlights(dentist)"
+                      :key="highlight"
+                      :value="highlight"
+                      rounded
+                      severity="contrast"
+                    />
+                    <Tag
+                      v-if="dentist.acessibilidadeCadeirante"
+                      value="Acessivel"
+                      rounded
+                      severity="info"
+                    />
+                    <Tag
+                      v-for="flag in buildDentistLegendFlags(dentist)"
+                      :key="flag"
+                      :value="flag"
+                      rounded
+                      severity="secondary"
+                    />
+                  </div>
                 </div>
               </div>
+            </article>
+          </div>
 
-              <div v-if="hasDentistMetadata(dentist)" class="tag-group">
-                <span class="tag-group-label">Legendas</span>
-                <div class="tag-group-list">
-                  <Tag
-                    v-for="highlight in buildDentistHighlights(dentist)"
-                    :key="highlight"
-                    :value="highlight"
-                    rounded
-                    severity="contrast"
-                  />
-                  <Tag
-                    v-if="dentist.acessibilidadeCadeirante"
-                    value="Acessivel"
-                    rounded
-                    severity="info"
-                  />
-                  <Tag
-                    v-for="flag in buildDentistLegendFlags(dentist)"
-                    :key="flag"
-                    :value="flag"
-                    rounded
-                    severity="secondary"
-                  />
-                </div>
-              </div>
-            </div>
-          </article>
-        </div>
+          <Paginator
+            v-if="shouldShowResultsPaginator"
+            v-model:first="resultsFirst"
+            v-model:rows="resultsRows"
+            :alwaysShow="false"
+            :rowsPerPageOptions="[12, 24, 48]"
+            :template="resultsPaginatorTemplate"
+            :totalRecords="displayDentists.length"
+            class="results-paginator results-paginator--bottom"
+            currentPageReportTemplate="{first} - {last} de {totalRecords}"
+          />
+        </template>
 
         <Message v-else-if="isTerminalState" severity="info" variant="outlined">
           A coleta terminou, mas nenhuma rota de dentistas retornou registros para esta busca.
@@ -2188,7 +2412,7 @@ onBeforeUnmount(() => {
 }
 
 .home-shell {
-  width: min(100%, 74rem);
+  width: min(100%, 80rem);
   margin: 0 auto;
   padding: 1.4rem 1.25rem 4rem;
   display: grid;
@@ -2376,6 +2600,86 @@ onBeforeUnmount(() => {
   box-shadow: var(--app-panel-shadow);
 }
 
+.provider-subsection {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--p-content-border-color) 50%, transparent);
+  border-radius: var(--p-content-border-radius);
+  background: var(--app-panel-background-soft);
+}
+
+.provider-subsection-header {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.provider-subsection-copy {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.provider-subsection--collapsible {
+  gap: 0;
+  padding: 0.95rem 1rem 1rem;
+}
+
+.provider-subsection-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.provider-subsection-summary::-webkit-details-marker {
+  display: none;
+}
+
+.provider-subsection-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.provider-subsection-title-line {
+  width: 1.45rem;
+  height: 1px;
+  background: color-mix(in srgb, var(--p-text-color) 78%, transparent);
+  flex: 0 0 auto;
+}
+
+.provider-subsection-title h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.2;
+}
+
+.provider-subsection-header p {
+  margin: 0;
+  color: var(--p-text-muted-color);
+  font-size: 0.88rem;
+  line-height: 1.55;
+}
+
+.provider-subsection-content {
+  display: grid;
+  gap: 0.9rem;
+  padding-top: 0.9rem;
+}
+
+.provider-subsection-chevron {
+  color: var(--p-text-muted-color);
+  font-size: 0.9rem;
+  transition: transform 0.2s ease;
+}
+
+.provider-subsection--collapsible[open] .provider-subsection-chevron {
+  transform: rotate(180deg);
+}
+
 .provider-advanced {
   border: 1px solid color-mix(in srgb, var(--p-content-border-color) 50%, transparent);
   background: var(--app-panel-background-soft);
@@ -2385,9 +2689,18 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 
+.provider-advanced :deep(.p-fieldset-toggle-button) {
+  gap: 0.45rem;
+  align-items: center;
+}
+
 .provider-advanced :deep(.p-fieldset-toggleable-content) {
   display: grid;
   gap: 0.9rem;
+}
+
+.provider-advanced :deep(.p-fieldset-content) {
+  padding-top: 0.2rem;
 }
 
 .provider-panel :deep(.p-card-body) {
@@ -2423,6 +2736,12 @@ onBeforeUnmount(() => {
   gap: 0.85rem;
 }
 
+.provider-fields-grid--time-range {
+  align-items: end;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
 .provider-field {
   display: grid;
   gap: 0.4rem;
@@ -2434,12 +2753,23 @@ onBeforeUnmount(() => {
   font-weight: 600;
 }
 
+.provider-field-optional {
+  margin-left: 0.45rem;
+  color: var(--p-text-muted-color);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
 .provider-field--wide {
   grid-column: span 2;
 }
 
 .provider-field--full {
   grid-column: 1 / -1;
+}
+
+.provider-field--time-range {
+  min-width: 0;
 }
 
 .provider-field :deep(.p-select),
@@ -2480,24 +2810,26 @@ onBeforeUnmount(() => {
 
 .search-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 7rem auto;
+  grid-template-columns: 6.5rem minmax(0, 1fr) auto;
   gap: 0.65rem;
   align-items: center;
 }
 
-.city-group,
+.municipality-select,
 .state-select,
 .search-submit {
   min-height: 3rem;
 }
 
-.city-group :deep(.p-inputtext),
+.municipality-select :deep(.p-select-label),
 .state-select :deep(.p-select-label) {
   font-size: 0.98rem;
 }
 
-.city-group :deep(.p-inputgroupaddon) {
-  color: var(--p-text-muted-color);
+.municipality-select :deep(.p-select-label) {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .search-submit {
@@ -2562,10 +2894,10 @@ onBeforeUnmount(() => {
 }
 
 .results-section {
-  width: min(100%, 56rem);
-  margin: 0 auto;
+  width: 100%;
+  margin: 0;
   display: grid;
-  gap: 1rem;
+  gap: 1.15rem;
 }
 
 .completed-banner {
@@ -2611,8 +2943,20 @@ onBeforeUnmount(() => {
 
 .results-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.15rem;
+}
+
+.results-paginator {
+  border: 1px solid color-mix(in srgb, var(--p-content-border-color) 68%, transparent);
+  border-radius: calc(var(--p-content-border-radius) + 0.1rem);
+  background: var(--app-panel-background);
+  box-shadow: var(--app-panel-shadow);
+  padding-inline: 0.2rem;
+}
+
+.results-paginator--bottom {
+  margin-top: 0.15rem;
 }
 
 .results-header {
@@ -2637,9 +2981,9 @@ onBeforeUnmount(() => {
   border-radius: var(--p-content-border-radius);
   background: var(--app-panel-background);
   box-shadow: var(--app-panel-shadow);
-  padding: 0.95rem;
+  padding: 1.05rem;
   display: grid;
-  gap: 0.85rem;
+  gap: 0.95rem;
 }
 
 .dentist-card-header {
@@ -2722,7 +3066,11 @@ onBeforeUnmount(() => {
 
 @media (max-width: 960px) {
   .results-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .results-paginator {
+    overflow-x: auto;
   }
 
   .search-submit {
@@ -2775,6 +3123,10 @@ onBeforeUnmount(() => {
 
   .dentist-card-header {
     flex-direction: column;
+  }
+
+  .results-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>

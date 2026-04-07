@@ -189,7 +189,7 @@ export const useHomeSearchStore = defineStore('home-search', () => {
     const errors: FormErrors = {}
 
     if (!isFilled(city.value)) {
-      errors.cidade = 'Informe a cidade.'
+      errors.cidade = 'Selecione o municipio.'
     }
 
     if (!selectedState.value) {
