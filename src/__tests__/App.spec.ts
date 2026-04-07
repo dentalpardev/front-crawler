@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import PrimeVue from 'primevue/config'
 import ToastService from 'primevue/toastservice'
@@ -155,5 +155,42 @@ describe('App shell', () => {
     expect(wrapper.text()).toContain('Informe seu e-mail para redefinir a senha')
     expect(wrapper.text()).toContain('Enviar link de recuperação')
     expect(wrapper.text()).toContain('Voltar para o login')
+  })
+
+  it('renders the reset password screen from the auth module', async () => {
+    const pinia = createPinia()
+    const router = createAppRouter(pinia)
+
+    await router.push('/reset-password?token=plain-token')
+    await router.isReady()
+
+    const wrapper = mount(AppShell, {
+      global: {
+        plugins: [pinia, [PrimeVue, primeVueOptions], ToastService, router],
+      },
+    })
+
+    expect(wrapper.text()).toContain('Redefinir Senha')
+    expect(wrapper.text()).toContain('Nova senha')
+    expect(wrapper.text()).toContain('Confirmar nova senha')
+    expect(wrapper.text()).toContain('Redefinir senha')
+  })
+
+  it('redirects reset password without token back to forgot password', async () => {
+    const pinia = createPinia()
+    const router = createAppRouter(pinia)
+
+    await router.push('/reset-password')
+    await router.isReady()
+
+    mount(AppShell, {
+      global: {
+        plugins: [pinia, [PrimeVue, primeVueOptions], ToastService, router],
+      },
+    })
+
+    await flushPromises()
+
+    expect(router.currentRoute.value.name).toBe('forgot-password')
   })
 })

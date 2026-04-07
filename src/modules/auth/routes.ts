@@ -3,6 +3,7 @@ import type { RouteRecordRaw } from 'vue-router'
 export const LOGIN_ROUTE_NAME = 'login'
 export const REGISTER_ROUTE_NAME = 'register'
 export const FORGOT_PASSWORD_ROUTE_NAME = 'forgot-password'
+export const RESET_PASSWORD_ROUTE_NAME = 'reset-password'
 
 export const authRoutes: RouteRecordRaw[] = [
   {
@@ -33,6 +34,15 @@ export const authRoutes: RouteRecordRaw[] = [
       module: 'auth',
       public: true,
       guestOnly: true,
+    },
+  },
+  {
+    path: '/reset-password',
+    name: RESET_PASSWORD_ROUTE_NAME,
+    component: () => import('./pages/ResetPasswordPage.vue'),
+    meta: {
+      module: 'auth',
+      public: true,
     },
   },
 ]
