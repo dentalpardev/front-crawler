@@ -79,6 +79,7 @@ const stateOptions: StateOption[] = [
 const providerOptions: ProviderOption[] = [
   { label: 'OdontoPrev', value: 'odontoprev' },
   { label: 'Hapvida', value: 'hapvida' },
+  { label: 'Amil', value: 'amil' },
   { label: 'SulAmerica', value: 'sulamerica' },
 ]
 

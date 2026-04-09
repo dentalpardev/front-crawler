@@ -1,4 +1,9 @@
 export {
+  getAmilCities,
+  getAmilNeighborhoods,
+  getAmilPlans,
+  getAmilSpecialties,
+  getAmilStates,
   getBatchDentists,
   getCrawlBatch,
   getCrawlJob,
@@ -25,6 +30,9 @@ export {
 } from './crawlersApi'
 export { getMunicipalitiesByState } from './locationsApi'
 export type {
+  AmilPayload,
+  AmilPlanOption,
+  AmilProviderOptions,
   BatchDentistsProviderResult,
   BatchDentistsResponse,
   CrawlBatchResponse,

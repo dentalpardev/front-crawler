@@ -13,6 +13,7 @@ html {
   --app-card-subtle-background: color-mix(in srgb, var(--p-surface-0) 88%, var(--p-primary-color) 2%);
   --app-provider-odontoprev-color: var(--p-blue-500);
   --app-provider-hapvida-color: var(--p-green-500);
+  --app-provider-amil-color: var(--p-cyan-500);
   --app-provider-sulamerica-color: var(--p-orange-500);
   --app-success-color: var(--p-green-500);
 }
@@ -39,6 +40,7 @@ html.app-dark {
   --app-card-subtle-background: color-mix(in srgb, var(--p-surface-800) 92%, var(--p-primary-color) 8%);
   --app-provider-odontoprev-color: var(--p-blue-300);
   --app-provider-hapvida-color: var(--p-green-300);
+  --app-provider-amil-color: var(--p-cyan-300);
   --app-provider-sulamerica-color: var(--p-orange-300);
   --app-success-color: var(--p-green-300);
 }

@@ -20,6 +20,11 @@ import { isApiError } from '@/shared/api'
 import type { CrawlBatchStatus, CrawlJobStatus, CrawlProvider } from '@/shared/types'
 import { AppTopbar } from '@/shared/ui'
 import {
+  getAmilCities,
+  getAmilNeighborhoods,
+  getAmilPlans,
+  getAmilSpecialties,
+  getAmilStates,
   getMunicipalitiesByState,
   getHapvidaCities,
   getHapvidaContractTypes,
@@ -35,6 +40,8 @@ import {
   getSulamericaProducts,
 } from '../api'
 import type {
+  AmilPlanOption,
+  AmilProviderOptions,
   DentistSpecialty,
   MunicipalityOption,
   OdontoprevProviderOptions,
@@ -85,6 +92,7 @@ type ProviderFieldErrors = Partial<Record<string, string>>
 const providerErrors = reactive<Record<CrawlProvider, ProviderFieldErrors>>({
   odontoprev: {},
   hapvida: {},
+  amil: {},
   sulamerica: {},
 })
 
@@ -100,6 +108,7 @@ let municipalityRequestId = 0
 const providerLoadErrors = reactive<Record<CrawlProvider, string>>({
   odontoprev: '',
   hapvida: '',
+  amil: '',
   sulamerica: '',
 })
 
@@ -115,6 +124,13 @@ const loadingState = reactive({
     services: false,
     specialties: false,
     neighborhoods: false,
+  },
+  amil: {
+    plans: false,
+    states: false,
+    cities: false,
+    neighborhoods: false,
+    specialties: false,
   },
   sulamerica: {
     products: false,
@@ -158,6 +174,20 @@ const hapvidaForm = reactive({
   servico: '',
   especialidade: '',
   bairro: '',
+})
+
+const amilCatalog = reactive({
+  plans: [] as AmilPlanOption[],
+  states: [] as SelectOption[],
+  cities: [] as SelectOption[],
+  neighborhoods: [] as SelectOption[],
+  specialties: [] as SelectOption[],
+})
+
+const amilForm = reactive({
+  selectedPlanKey: '',
+  bairro: '',
+  especialidade: '',
 })
 
 const sulamericaCatalog = reactive({
@@ -226,6 +256,10 @@ const providerHelperText = computed(() => {
     return 'Os parametros internos da busca agora sao resolvidos pelo backend.'
   }
 
+  if (primaryProvider.value === 'amil') {
+    return 'Selecione rede ou plano da Amil antes de escolher UF e municipio.'
+  }
+
   return 'UF e municipio ja sao suficientes para iniciar a coleta.'
 })
 
@@ -242,13 +276,19 @@ const municipalityPlaceholder = computed(() => {
 })
 
 const searchStateOptions = computed(() => {
-  if (!selectedProviders.value.includes('hapvida') || hapvidaCatalog.states.length === 0) {
-    return stateOptions
+  let filteredOptions = stateOptions
+
+  if (selectedProviders.value.includes('hapvida') && hapvidaCatalog.states.length > 0) {
+    const allowedCodes = new Set(hapvidaCatalog.states.map((option) => option.codigo))
+    filteredOptions = filteredOptions.filter((option) => allowedCodes.has(option.code))
   }
 
-  const allowedCodes = new Set(hapvidaCatalog.states.map((option) => option.codigo))
+  if (selectedProviders.value.includes('amil') && amilCatalog.states.length > 0) {
+    const allowedCodes = new Set(amilCatalog.states.map((option) => option.codigo))
+    filteredOptions = filteredOptions.filter((option) => allowedCodes.has(option.code))
+  }
 
-  return stateOptions.filter((option) => allowedCodes.has(option.code))
+  return filteredOptions
 })
 
 const hasRequiredProviderFilters = computed(() => {
@@ -267,6 +307,10 @@ const hasRequiredProviderFilters = computed(() => {
           hapvidaForm.servico &&
           hapvidaForm.especialidade,
       )
+    }
+
+    if (provider === 'amil') {
+      return Boolean(amilForm.selectedPlanKey && amilForm.bairro && amilForm.especialidade)
     }
 
     return Boolean(sulamericaForm.produto && sulamericaForm.plano)
@@ -340,6 +384,18 @@ const locationSummary = computed(() => {
   return `${formatDentistCount(displayDentistsTotal.value)} em ${activeLocationLabel.value}`
 })
 
+const amilPlanSelectionOptions = computed(() =>
+  amilCatalog.plans.map((option) => ({
+    key: option.key,
+    label: option.displayName,
+    tipo: option.tipo,
+  })),
+)
+
+const selectedAmilPlan = computed(
+  () => amilCatalog.plans.find((option) => option.key === amilForm.selectedPlanKey) ?? null,
+)
+
 const completedSummaryItems = computed(() => {
   if (currentBatch.value) {
     if (currentBatchResults.value.length > 0) {
@@ -403,6 +459,7 @@ function resetProviderErrors(provider?: CrawlProvider) {
 
   providerErrors.odontoprev = {}
   providerErrors.hapvida = {}
+  providerErrors.amil = {}
   providerErrors.sulamerica = {}
 }
 
@@ -503,6 +560,18 @@ function findMatchingCatalogOption(options: SelectOption[], value: string) {
   )
 }
 
+function createAmilPlanKey(option: Pick<AmilPlanOption, 'codigoRede' | 'codigoPlano'>) {
+  return `${option.codigoRede}::${option.codigoPlano ?? ''}`
+}
+
+function formatAmilPlanDisplay(option: Pick<AmilPlanOption, 'nome' | 'tipo' | 'linha'>) {
+  if (option.tipo === 'rede') {
+    return `${option.nome} · Rede`
+  }
+
+  return option.linha ? `${option.nome} · ${option.linha}` : `${option.nome} · Plano`
+}
+
 function getHapvidaResolvedCity() {
   const currentCity = trimValue(city.value)
 
@@ -537,6 +606,28 @@ const isSulamericaCityCompatible = computed(() => {
   const currentCity = normalizeCatalogValue(city.value)
 
   return sulamericaCatalog.cities.some((option) => normalizeCatalogValue(option.codigo) === currentCity)
+})
+
+function getAmilResolvedCity() {
+  const currentCity = trimValue(city.value)
+
+  if (!currentCity) {
+    return ''
+  }
+
+  if (amilCatalog.cities.length === 0) {
+    return currentCity
+  }
+
+  return findMatchingCatalogOption(amilCatalog.cities, currentCity)?.codigo ?? ''
+}
+
+const isAmilCityCompatible = computed(() => {
+  if (!selectedProviders.value.includes('amil') || !trimValue(city.value) || amilCatalog.cities.length === 0) {
+    return true
+  }
+
+  return Boolean(findMatchingCatalogOption(amilCatalog.cities, city.value))
 })
 
 function resetHapvidaProductsAndBelow() {
@@ -582,6 +673,35 @@ function resetHapvidaSpecialtiesAndBelow() {
 function resetHapvidaNeighborhoods() {
   hapvidaForm.bairro = ''
   hapvidaCatalog.neighborhoods = []
+}
+
+function resetAmilStatesAndBelow() {
+  amilForm.bairro = ''
+  amilForm.especialidade = ''
+  amilCatalog.states = []
+  amilCatalog.cities = []
+  amilCatalog.neighborhoods = []
+  amilCatalog.specialties = []
+}
+
+function resetAmilCitiesAndBelow() {
+  amilForm.bairro = ''
+  amilForm.especialidade = ''
+  amilCatalog.cities = []
+  amilCatalog.neighborhoods = []
+  amilCatalog.specialties = []
+}
+
+function resetAmilNeighborhoodsAndBelow() {
+  amilForm.bairro = ''
+  amilForm.especialidade = ''
+  amilCatalog.neighborhoods = []
+  amilCatalog.specialties = []
+}
+
+function resetAmilSpecialties() {
+  amilForm.especialidade = ''
+  amilCatalog.specialties = []
 }
 
 function resetSulamericaPlansAndBelow() {
@@ -803,6 +923,161 @@ async function loadHapvidaNeighborhoodOptions() {
   }
 }
 
+async function loadAmilPlanOptions() {
+  if (!authStore.token) {
+    return
+  }
+
+  loadingState.amil.plans = true
+  clearProviderLoadError('amil')
+
+  try {
+    const plans = await getAmilPlans({}, authStore.token)
+
+    amilCatalog.plans = plans.map((option) => ({
+      ...option,
+      key: createAmilPlanKey(option),
+      displayName: formatAmilPlanDisplay(option),
+    }))
+  } catch (error) {
+    await handleCatalogFailure('amil', error, 'Nao foi possivel carregar os catalogos da Amil.')
+  } finally {
+    loadingState.amil.plans = false
+  }
+}
+
+async function loadAmilStateOptions() {
+  if (!authStore.token || !selectedAmilPlan.value) {
+    return
+  }
+
+  loadingState.amil.states = true
+  clearProviderLoadError('amil')
+
+  try {
+    amilCatalog.states = await getAmilStates(
+      {
+        codigoRede: selectedAmilPlan.value.codigoRede,
+        codigoPlano: selectedAmilPlan.value.codigoPlano ?? undefined,
+      },
+      authStore.token,
+    )
+  } catch (error) {
+    await handleCatalogFailure('amil', error, 'Nao foi possivel carregar as UFs da Amil.')
+  } finally {
+    loadingState.amil.states = false
+  }
+}
+
+async function loadAmilCityOptions() {
+  if (!authStore.token || !selectedAmilPlan.value || !selectedState.value?.code) {
+    return
+  }
+
+  loadingState.amil.cities = true
+  clearProviderLoadError('amil')
+
+  try {
+    amilCatalog.cities = await getAmilCities(
+      {
+        codigoRede: selectedAmilPlan.value.codigoRede,
+        codigoPlano: selectedAmilPlan.value.codigoPlano ?? undefined,
+        uf: selectedState.value.code,
+      },
+      authStore.token,
+    )
+
+    if (getAmilResolvedCity()) {
+      await loadAmilNeighborhoodOptions()
+    }
+  } catch (error) {
+    await handleCatalogFailure('amil', error, 'Nao foi possivel carregar os municipios da Amil.')
+  } finally {
+    loadingState.amil.cities = false
+  }
+}
+
+async function loadAmilNeighborhoodOptions() {
+  if (!authStore.token || !selectedAmilPlan.value || !selectedState.value?.code || !trimValue(city.value)) {
+    return
+  }
+
+  const resolvedCity = getAmilResolvedCity()
+
+  if (!resolvedCity) {
+    amilCatalog.neighborhoods = []
+    return
+  }
+
+  loadingState.amil.neighborhoods = true
+  clearProviderLoadError('amil')
+
+  try {
+    amilCatalog.neighborhoods = await getAmilNeighborhoods(
+      {
+        codigoRede: selectedAmilPlan.value.codigoRede,
+        codigoPlano: selectedAmilPlan.value.codigoPlano ?? undefined,
+        uf: selectedState.value.code,
+        cidade: resolvedCity,
+      },
+      authStore.token,
+    )
+
+    const defaultNeighborhood =
+      amilCatalog.neighborhoods.find(
+        (option) => normalizeCatalogValue(option.codigo) === 'TODOS OS BAIRROS',
+      ) ?? null
+
+    if (!amilForm.bairro && defaultNeighborhood) {
+      amilForm.bairro = defaultNeighborhood.codigo
+    }
+  } catch (error) {
+    await handleCatalogFailure('amil', error, 'Nao foi possivel carregar os bairros da Amil.')
+  } finally {
+    loadingState.amil.neighborhoods = false
+  }
+}
+
+async function loadAmilSpecialtyOptions() {
+  if (
+    !authStore.token ||
+    !selectedAmilPlan.value ||
+    !selectedState.value?.code ||
+    !trimValue(city.value) ||
+    !amilForm.bairro
+  ) {
+    return
+  }
+
+  const resolvedCity = getAmilResolvedCity()
+
+  if (!resolvedCity) {
+    amilCatalog.specialties = []
+    return
+  }
+
+  loadingState.amil.specialties = true
+  clearProviderLoadError('amil')
+
+  try {
+    amilCatalog.specialties = await getAmilSpecialties(
+      {
+        codigoRede: selectedAmilPlan.value.codigoRede,
+        codigoPlano: selectedAmilPlan.value.codigoPlano ?? undefined,
+        uf: selectedState.value.code,
+        cidade: resolvedCity,
+        bairro: amilForm.bairro,
+        tipoServico: 'DENTAL',
+      },
+      authStore.token,
+    )
+  } catch (error) {
+    await handleCatalogFailure('amil', error, 'Nao foi possivel carregar as especialidades da Amil.')
+  } finally {
+    loadingState.amil.specialties = false
+  }
+}
+
 async function loadSulamericaProductOptions(force = false) {
   if (!authStore.token || (!force && (loadingState.sulamerica.products || sulamericaCatalog.products.length > 0))) {
     return
@@ -919,6 +1194,20 @@ function validateProviderFilters() {
       }
     }
 
+    if (provider === 'amil') {
+      if (!amilForm.selectedPlanKey) {
+        providerErrors.amil.plan = 'Selecione uma rede ou um plano.'
+      }
+
+      if (!amilForm.bairro) {
+        providerErrors.amil.bairro = 'Selecione o bairro.'
+      }
+
+      if (!amilForm.especialidade) {
+        providerErrors.amil.especialidade = 'Selecione a especialidade.'
+      }
+    }
+
     if (provider === 'sulamerica') {
       if (!sulamericaForm.produto) {
         providerErrors.sulamerica.produto = 'Selecione o produto.'
@@ -933,6 +1222,7 @@ function validateProviderFilters() {
   return (
     Object.keys(providerErrors.odontoprev).length === 0 &&
     Object.keys(providerErrors.hapvida).length === 0 &&
+    Object.keys(providerErrors.amil).length === 0 &&
     Object.keys(providerErrors.sulamerica).length === 0
   )
 }
@@ -988,6 +1278,21 @@ function buildProviderOptionsPayload(): QueueBatchProviderOptions {
     }
   }
 
+  if (selectedProviders.value.includes('amil') && selectedAmilPlan.value) {
+    const amilOptions: AmilProviderOptions = {
+      codigoRede: selectedAmilPlan.value.codigoRede,
+      bairro: amilForm.bairro,
+      tipoServico: 'DENTAL',
+      especialidade: amilForm.especialidade,
+    }
+
+    if (selectedAmilPlan.value.codigoPlano) {
+      amilOptions.codigoPlano = selectedAmilPlan.value.codigoPlano
+    }
+
+    nextOptions.amil = amilOptions
+  }
+
   if (selectedProviders.value.includes('sulamerica')) {
     nextOptions.sulamerica = {
       produto: sulamericaForm.produto,
@@ -1036,6 +1341,10 @@ function getProviderTone(value: CrawlProvider) {
 
   if (value === 'hapvida') {
     return 'provider-tone--hapvida'
+  }
+
+  if (value === 'amil') {
+    return 'provider-tone--amil'
   }
 
   return 'provider-tone--sulamerica'
@@ -1396,12 +1705,35 @@ watch(
       void loadHapvidaContractTypeOptions()
     }
 
+    if (providers.includes('amil')) {
+      void loadAmilPlanOptions()
+    }
+
     if (providers.includes('sulamerica')) {
       void loadSulamericaProductOptions()
       void loadSulamericaHourOptions()
     }
   },
   { immediate: true },
+)
+
+watch(
+  () => amilForm.selectedPlanKey,
+  (value, previousValue) => {
+    if (value === previousValue) {
+      return
+    }
+
+    resetAmilStatesAndBelow()
+
+    if (value && selectedProviders.value.includes('amil')) {
+      void loadAmilStateOptions()
+
+      if (selectedState.value?.code) {
+        void loadAmilCityOptions()
+      }
+    }
+  },
 )
 
 watch(
@@ -1460,6 +1792,11 @@ watch(
       void loadHapvidaCityOptions()
     }
 
+    if (selectedAmilPlan.value) {
+      resetAmilCitiesAndBelow()
+      void loadAmilCityOptions()
+    }
+
     if (sulamericaForm.produto && sulamericaForm.plano) {
       resetSulamericaCitiesAndBelow()
       void loadSulamericaCityOptions()
@@ -1496,6 +1833,29 @@ watch(
       }
     }
 
+    if (selectedAmilPlan.value && selectedState.value?.code) {
+      resetAmilNeighborhoodsAndBelow()
+
+      if (value) {
+        void loadAmilNeighborhoodOptions()
+      }
+    }
+
+  },
+)
+
+watch(
+  () => amilForm.bairro,
+  (value, previousValue) => {
+    if (value === previousValue) {
+      return
+    }
+
+    resetAmilSpecialties()
+
+    if (value) {
+      void loadAmilSpecialtyOptions()
+    }
   },
 )
 
@@ -2062,6 +2422,109 @@ onBeforeUnmount(() => {
               </template>
             </Card>
 
+            <Card v-if="activeProviderPanel === 'amil'" class="provider-panel">
+              <template #content>
+                <div class="provider-panel-body">
+                  <div class="provider-panel-header">
+                    <div>
+                      <h2>Filtros Amil</h2>
+                      <p>Comece por rede ou plano. UF e municipio continuam vindo do topo da tela e os demais filtros seguem a cascata da Amil.</p>
+                    </div>
+                    <Tag :class="getProviderTone('amil')" rounded severity="secondary" value="Amil" />
+                  </div>
+
+                  <Message
+                    v-if="providerLoadErrors.amil"
+                    severity="error"
+                    size="small"
+                    variant="outlined"
+                  >
+                    {{ providerLoadErrors.amil }}
+                  </Message>
+
+                  <Message
+                    v-else-if="amilCatalog.cities.length > 0 && !isAmilCityCompatible"
+                    severity="warn"
+                    size="small"
+                    variant="outlined"
+                  >
+                    O municipio selecionado no topo nao apareceu no catalogo atual da Amil para a rede ou plano escolhido.
+                  </Message>
+
+                  <div class="provider-fields-grid">
+                    <div class="provider-field provider-field--full">
+                      <label for="amil-plan">Rede ou plano</label>
+                      <Select
+                        v-model="amilForm.selectedPlanKey"
+                        input-id="amil-plan"
+                        :invalid="Boolean(providerErrors.amil.plan)"
+                        :loading="loadingState.amil.plans"
+                        :options="amilPlanSelectionOptions"
+                        filter
+                        filterPlaceholder="Busque por rede ou plano"
+                        option-label="label"
+                        option-value="key"
+                        placeholder="Selecione"
+                        show-clear
+                        :virtualScrollerOptions="{ itemSize: 38 }"
+                      />
+                    </div>
+
+                    <div v-if="selectedAmilPlan" class="provider-field provider-field--full">
+                      <Message severity="secondary" variant="simple">
+                        {{ selectedAmilPlan.tipo === 'rede' ? 'Busca dental por rede selecionada.' : 'Busca dental por plano especifico selecionado.' }}
+                        Tipo de servico definido automaticamente como DENTAL.
+                      </Message>
+                    </div>
+
+                    <div class="provider-field">
+                      <label for="amil-bairro">Bairro</label>
+                      <Select
+                        v-model="amilForm.bairro"
+                        input-id="amil-bairro"
+                        :disabled="!trimValue(city) || !selectedState || !selectedAmilPlan || !isAmilCityCompatible"
+                        :invalid="Boolean(providerErrors.amil.bairro)"
+                        :loading="loadingState.amil.cities || loadingState.amil.neighborhoods"
+                        :options="amilCatalog.neighborhoods"
+                        filter
+                        filterPlaceholder="Busque o bairro"
+                        option-label="nome"
+                        option-value="codigo"
+                        placeholder="Selecione"
+                        show-clear
+                        :virtualScrollerOptions="{ itemSize: 38 }"
+                      />
+                    </div>
+
+                    <div class="provider-field">
+                      <label for="amil-especialidade">Especialidade</label>
+                      <Select
+                        v-model="amilForm.especialidade"
+                        input-id="amil-especialidade"
+                        :disabled="!amilForm.bairro"
+                        :invalid="Boolean(providerErrors.amil.especialidade)"
+                        :loading="loadingState.amil.specialties"
+                        :options="amilCatalog.specialties"
+                        filter
+                        filterPlaceholder="Busque a especialidade"
+                        option-label="nome"
+                        option-value="codigo"
+                        placeholder="Selecione"
+                        show-clear
+                        :virtualScrollerOptions="{ itemSize: 38 }"
+                      />
+                    </div>
+                  </div>
+
+                  <div v-if="Object.keys(providerErrors.amil).length > 0" class="provider-inline-errors">
+                    <small v-if="providerErrors.amil.plan">{{ providerErrors.amil.plan }}</small>
+                    <small v-if="providerErrors.amil.bairro">{{ providerErrors.amil.bairro }}</small>
+                    <small v-if="providerErrors.amil.especialidade">{{ providerErrors.amil.especialidade }}</small>
+                  </div>
+                </div>
+              </template>
+            </Card>
+
             <Card v-if="activeProviderPanel === 'sulamerica'" class="provider-panel">
               <template #content>
                 <div class="provider-panel-body">
@@ -2543,6 +3006,10 @@ onBeforeUnmount(() => {
   color: var(--app-provider-hapvida-color);
 }
 
+.provider-tone--amil {
+  color: var(--app-provider-amil-color);
+}
+
 .provider-tone--sulamerica {
   color: var(--app-provider-sulamerica-color);
 }
@@ -2745,6 +3212,7 @@ onBeforeUnmount(() => {
 .provider-field {
   display: grid;
   gap: 0.4rem;
+  min-width: 0;
 }
 
 .provider-field label {
@@ -2775,9 +3243,17 @@ onBeforeUnmount(() => {
 .provider-field :deep(.p-select),
 .provider-field :deep(.p-inputtext) {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.provider-field :deep(.p-select) {
+  overflow: hidden;
 }
 
 .provider-field :deep(.p-select-label) {
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

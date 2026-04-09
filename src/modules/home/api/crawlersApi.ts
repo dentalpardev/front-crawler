@@ -6,6 +6,21 @@ export type SelectOption = {
   nome: string
 }
 
+export type AmilPlanApiOption = {
+  codigoRede: string
+  codigoPlano: string | null
+  nome: string
+  operadora: string | null
+  linha: string | null
+  uri: string | null
+  tipo: 'rede' | 'plano'
+}
+
+export type AmilPlanOption = AmilPlanApiOption & {
+  key: string
+  displayName: string
+}
+
 export type QueueJobResponse = {
   jobId: string
   status: 'queued'
@@ -149,13 +164,26 @@ export type SulamericaPayload = {
   horarioFinal?: string
 }
 
+export type AmilPayload = {
+  cidade: string
+  uf: string
+  codigoRede: string
+  codigoPlano?: string
+  identificacao?: string
+  bairro: string
+  tipoServico: string
+  especialidade: string
+}
+
 export type OdontoprevProviderOptions = Omit<OdontoprevPayload, 'cidade' | 'uf'>
 export type HapvidaProviderOptions = Omit<HapvidaPayload, 'cidade' | 'uf'>
+export type AmilProviderOptions = Omit<AmilPayload, 'cidade' | 'uf'>
 export type SulamericaProviderOptions = Omit<SulamericaPayload, 'cidade' | 'uf'>
 
 export type ProviderOptionsMap = {
   odontoprev: OdontoprevProviderOptions
   hapvida: HapvidaProviderOptions
+  amil: AmilProviderOptions
   sulamerica: SulamericaProviderOptions
 }
 
@@ -240,9 +268,40 @@ type SulamericaAreasQuery = {
   bairro?: string
 }
 
+type AmilBaseQuery = {
+  codigoRede: string
+  codigoPlano?: string
+  identificacao?: string
+}
+
+type AmilStatesQuery = AmilBaseQuery
+
+type AmilCitiesQuery = AmilBaseQuery & {
+  uf: string
+}
+
+type AmilNeighborhoodsQuery = AmilBaseQuery & {
+  uf: string
+  cidade: string
+}
+
+type AmilServiceTypesQuery = AmilBaseQuery & {
+  uf: string
+  cidade: string
+  bairro: string
+}
+
+type AmilSpecialtiesQuery = AmilBaseQuery & {
+  uf: string
+  cidade: string
+  bairro: string
+  tipoServico: string
+}
+
 type QueuePayloadMap = {
   odontoprev: OdontoprevPayload
   hapvida: HapvidaPayload
+  amil: AmilPayload
   sulamerica: SulamericaPayload
 }
 
@@ -344,6 +403,48 @@ export function getHapvidaSpecialties(params: HapvidaSpecialtiesQuery, token: st
 export function getHapvidaNeighborhoods(params: HapvidaNeighborhoodsQuery, token: string) {
   return apiRequest<SelectOption[]>(
     buildPathWithQuery('/crawlers/hapvida/filters/neighborhoods', params),
+    { token },
+  )
+}
+
+export function getAmilPlans(params: Pick<AmilBaseQuery, 'identificacao'>, token: string) {
+  return apiRequest<AmilPlanApiOption[]>(
+    buildPathWithQuery('/crawlers/amil/filters/plans', params),
+    { token },
+  )
+}
+
+export function getAmilStates(params: AmilStatesQuery, token: string) {
+  return apiRequest<SelectOption[]>(
+    buildPathWithQuery('/crawlers/amil/filters/states', params),
+    { token },
+  )
+}
+
+export function getAmilCities(params: AmilCitiesQuery, token: string) {
+  return apiRequest<SelectOption[]>(
+    buildPathWithQuery('/crawlers/amil/filters/cities', params),
+    { token },
+  )
+}
+
+export function getAmilNeighborhoods(params: AmilNeighborhoodsQuery, token: string) {
+  return apiRequest<SelectOption[]>(
+    buildPathWithQuery('/crawlers/amil/filters/neighborhoods', params),
+    { token },
+  )
+}
+
+export function getAmilServiceTypes(params: AmilServiceTypesQuery, token: string) {
+  return apiRequest<SelectOption[]>(
+    buildPathWithQuery('/crawlers/amil/filters/service-types', params),
+    { token },
+  )
+}
+
+export function getAmilSpecialties(params: AmilSpecialtiesQuery, token: string) {
+  return apiRequest<SelectOption[]>(
+    buildPathWithQuery('/crawlers/amil/filters/specialties', params),
     { token },
   )
 }
