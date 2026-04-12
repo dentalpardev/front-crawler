@@ -89,6 +89,11 @@ const {
 
 type ProviderFieldErrors = Partial<Record<string, string>>
 
+type DentistLegendIcon = {
+  code: string
+  label: string
+}
+
 const providerErrors = reactive<Record<CrawlProvider, ProviderFieldErrors>>({
   odontoprev: {},
   hapvida: {},
@@ -1380,6 +1385,65 @@ function buildDentistHighlights(dentist: (typeof displayDentists.value)[number])
   ].filter((value): value is string => Boolean(value))
 }
 
+function buildDentistLegendIcons(dentist: (typeof displayDentists.value)[number]): DentistLegendIcon[] {
+  return [
+    dentist.comunicacaoEventosAdversos
+      ? {
+          code: 'N',
+          label: 'Comunicacao de eventos adversos',
+        }
+      : null,
+    dentist.posGraduadoLatoSenso
+      ? {
+          code: 'P',
+          label: 'Profissional com especializacao',
+        }
+      : null,
+    dentist.residencia
+      ? {
+          code: 'R',
+          label: 'Profissional com residencia',
+        }
+      : null,
+    dentist.tituloEspecialista || dentist.possuiTituloEspecialidade
+      ? {
+          code: 'E',
+          label: 'Titulo de especialista',
+        }
+      : null,
+    dentist.qualidadeMonitorada
+      ? {
+          code: 'Q',
+          label: 'Qualidade monitorada',
+        }
+      : null,
+    dentist.programaAcreditacao
+      ? {
+          code: 'A',
+          label: 'Programa de acreditacao',
+        }
+      : null,
+    dentist.certificacoesEntidadesGestoras
+      ? {
+          code: 'G',
+          label: 'Certificacoes de entidades gestoras',
+        }
+      : null,
+    dentist.certificacaoIso9001
+      ? {
+          code: 'I',
+          label: 'Certificacao ISO 9001',
+        }
+      : null,
+    dentist.doutoradoPosGraduacao
+      ? {
+          code: 'D',
+          label: 'Profissional com doutorado ou pos-doutorado',
+        }
+      : null,
+  ].filter((value): value is DentistLegendIcon => Boolean(value))
+}
+
 function normalizeSpecialtyLabel(specialty: DentistSpecialty) {
   if (typeof specialty === 'string') {
     return specialty
@@ -1401,27 +1465,15 @@ function getDentistAreas(dentist: (typeof displayDentists.value)[number]) {
     .filter((value): value is string => Boolean(value))
 }
 
-function buildDentistLegendFlags(dentist: (typeof displayDentists.value)[number]) {
-  return [
-    dentist.programaAcreditacao ? 'Acreditacao' : null,
-    dentist.qualidadeMonitorada ? 'Qualidade Monitorada' : null,
-    dentist.posGraduadoLatoSenso ? 'Lato Sensu' : null,
-    dentist.mestrado ? 'Mestrado' : null,
-    dentist.comunicacaoEventosAdversos ? 'Eventos Adversos' : null,
-    dentist.certificacoesEntidadesGestoras ? 'Entidade Gestora' : null,
-    dentist.certificacaoIso9001 ? 'ISO 9001' : null,
-    dentist.residencia ? 'Residencia' : null,
-    dentist.tituloEspecialista || dentist.possuiTituloEspecialidade ? 'Especialista' : null,
-    dentist.doutoradoPosGraduacao ? 'Doutorado' : null,
-  ].filter((value): value is string => Boolean(value))
-}
-
 function hasDentistMetadata(dentist: (typeof displayDentists.value)[number]) {
   return (
     buildDentistHighlights(dentist).length > 0 ||
-    buildDentistLegendFlags(dentist).length > 0 ||
     dentist.acessibilidadeCadeirante
   )
+}
+
+function hasDentistQualificationLegends(dentist: (typeof displayDentists.value)[number]) {
+  return buildDentistLegendIcons(dentist).length > 0
 }
 
 function exportDentistsAsCsv() {
@@ -2818,7 +2870,7 @@ onBeforeUnmount(() => {
                 </div>
 
                 <div v-if="hasDentistMetadata(dentist)" class="tag-group">
-                  <span class="tag-group-label">Legendas</span>
+                  <span class="tag-group-label">Informacoes</span>
                   <div class="tag-group-list">
                     <Tag
                       v-for="highlight in buildDentistHighlights(dentist)"
@@ -2833,13 +2885,22 @@ onBeforeUnmount(() => {
                       rounded
                       severity="info"
                     />
-                    <Tag
-                      v-for="flag in buildDentistLegendFlags(dentist)"
-                      :key="flag"
-                      :value="flag"
-                      rounded
-                      severity="secondary"
-                    />
+                  </div>
+                </div>
+
+                <div v-if="hasDentistQualificationLegends(dentist)" class="tag-group">
+                  <span class="tag-group-label">Legendas</span>
+                  <div class="dentist-legend-list">
+                    <span
+                      v-for="icon in buildDentistLegendIcons(dentist)"
+                      :key="`${icon.code}-${icon.label}`"
+                      :aria-label="icon.label"
+                      :title="icon.label"
+                      class="dentist-legend-chip"
+                    >
+                      <span class="dentist-legend-glyph">{{ icon.code }}</span>
+                      <span class="dentist-legend-text">{{ icon.label }}</span>
+                    </span>
                   </div>
                 </div>
               </div>
@@ -3538,6 +3599,45 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.dentist-legend-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.dentist-legend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.35rem 0.6rem 0.35rem 0.35rem;
+  border: 1px solid color-mix(in srgb, var(--p-content-border-color) 72%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--app-panel-background) 90%, var(--p-surface-100));
+}
+
+.dentist-legend-glyph {
+  width: 1.8rem;
+  height: 1.8rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.45rem;
+  background: color-mix(in srgb, var(--p-text-color) 80%, transparent);
+  color: var(--app-panel-background);
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.dentist-legend-text {
+  min-width: 0;
+  color: var(--p-text-color);
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
 @media (max-width: 960px) {
