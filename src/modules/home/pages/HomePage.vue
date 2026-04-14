@@ -324,6 +324,26 @@ const hasRequiredProviderFilters = computed(() => {
 
 const canSubmitSearch = computed(() => canSearch.value && hasRequiredProviderFilters.value)
 
+const canClearScreen = computed(
+  () =>
+    selectedProviders.value.length > 0 ||
+    Boolean(selectedState.value) ||
+    Boolean(trimValue(city.value)) ||
+    Boolean(currentJob.value) ||
+    Boolean(currentBatch.value) ||
+    hasAnyDentists.value ||
+    Boolean(formError.value) ||
+    Object.keys(formErrors.value).length > 0,
+)
+
+const isRetryingActiveProvider = computed(() => {
+  if (!activeProviderPanel.value) {
+    return false
+  }
+
+  return isProviderCatalogLoading(activeProviderPanel.value)
+})
+
 const selectedProviderOptions = computed(() =>
   providerOptions.filter((option) => selectedProviders.value.includes(option.value)),
 )
@@ -717,6 +737,56 @@ function resetSulamericaPlansAndBelow() {
 
 function resetSulamericaCitiesAndBelow() {
   sulamericaCatalog.cities = []
+}
+
+function resetOdontoprevForm() {
+  odontoprevForm.codigoRede = ''
+  odontoprevForm.codigoPlano = ''
+  odontoprevForm.codigoEspecialidade = ''
+  odontoprevForm.isEspecialista = false
+  odontoprevForm.isAtendeWhatsApp = false
+  odontoprevForm.nomeDentista = ''
+  odontoprevForm.acessibilidade = false
+  odontoprevForm.idioma = ''
+}
+
+function resetProviderFilters() {
+  resetOdontoprevForm()
+
+  hapvidaForm.tipoContrato = ''
+  resetHapvidaProductsAndBelow()
+
+  amilForm.selectedPlanKey = ''
+  resetAmilStatesAndBelow()
+
+  sulamericaForm.produto = ''
+  sulamericaForm.horarioInicial = ''
+  sulamericaForm.horarioFinal = ''
+  resetSulamericaPlansAndBelow()
+}
+
+function clearProviderFeedback() {
+  providerLoadErrors.odontoprev = ''
+  providerLoadErrors.hapvida = ''
+  providerLoadErrors.amil = ''
+  providerLoadErrors.sulamerica = ''
+  resetProviderErrors()
+}
+
+function isProviderCatalogLoading(provider: CrawlProvider) {
+  if (provider === 'odontoprev') {
+    return loadingState.odontoprev.filters
+  }
+
+  if (provider === 'hapvida') {
+    return Object.values(loadingState.hapvida).some(Boolean)
+  }
+
+  if (provider === 'amil') {
+    return Object.values(loadingState.amil).some(Boolean)
+  }
+
+  return Object.values(loadingState.sulamerica).some(Boolean)
 }
 
 async function loadOdontoprevCatalog(force = false) {
@@ -1166,6 +1236,83 @@ async function loadSulamericaCityOptions() {
   } finally {
     loadingState.sulamerica.cities = false
   }
+}
+
+async function retryHapvidaCatalog() {
+  await loadHapvidaContractTypeOptions(true)
+
+  if (hapvidaForm.tipoContrato) {
+    await loadHapvidaProductsOptions()
+  }
+
+  if (hapvidaForm.produto) {
+    await loadHapvidaStateOptions()
+
+    if (selectedState.value?.code) {
+      await loadHapvidaCityOptions()
+    }
+  }
+
+  if (hapvidaForm.servico) {
+    await loadHapvidaSpecialtyOptions()
+  }
+
+  if (hapvidaForm.especialidade) {
+    await loadHapvidaNeighborhoodOptions()
+  }
+}
+
+async function retryAmilCatalog() {
+  await loadAmilPlanOptions()
+
+  if (selectedAmilPlan.value) {
+    await loadAmilStateOptions()
+
+    if (selectedState.value?.code) {
+      await loadAmilCityOptions()
+    }
+  }
+
+  if (amilForm.bairro) {
+    await loadAmilSpecialtyOptions()
+  }
+}
+
+async function retrySulamericaCatalog() {
+  await Promise.all([loadSulamericaProductOptions(true), loadSulamericaHourOptions(true)])
+
+  if (sulamericaForm.produto) {
+    await loadSulamericaPlanOptions()
+  }
+
+  if (sulamericaForm.plano && selectedState.value?.code) {
+    await loadSulamericaCityOptions()
+  }
+}
+
+async function handleRetryProviderCatalog(provider: CrawlProvider) {
+  if (!authStore.token || isProviderCatalogLoading(provider)) {
+    return
+  }
+
+  clearProviderLoadError(provider)
+
+  if (provider === 'odontoprev') {
+    await loadOdontoprevCatalog(true)
+    return
+  }
+
+  if (provider === 'hapvida') {
+    await retryHapvidaCatalog()
+    return
+  }
+
+  if (provider === 'amil') {
+    await retryAmilCatalog()
+    return
+  }
+
+  await retrySulamericaCatalog()
 }
 
 function validateProviderFilters() {
@@ -1631,6 +1778,34 @@ async function handleLogout() {
   await router.push('/login')
 }
 
+function handleClearScreen() {
+  stopPolling()
+  homeSearchStore.clearCurrentSearch()
+
+  selectedProviders.value = []
+  selectedState.value = null
+  city.value = ''
+  activeProviderPanel.value = null
+  resultsFirst.value = 0
+  lastStatus = null
+
+  municipalityLoadError.value = ''
+  municipalityOptions.value = []
+  municipalityRequestId += 1
+  isLoadingMunicipalities.value = false
+
+  formError.value = ''
+  formErrors.value = {}
+  clearProviderFeedback()
+  resetProviderFilters()
+
+  toast.add({
+    severity: 'info',
+    summary: 'Tela limpa.',
+    life: 2500,
+  })
+}
+
 async function handleStartCrawl() {
   if (!authStore.token) {
     await router.push('/login')
@@ -1686,6 +1861,11 @@ async function handleStartCrawl() {
       })
     }
   }
+}
+
+async function handleRetrySearch() {
+  formError.value = ''
+  await handleStartCrawl()
 }
 
 async function refreshCurrentStatus() {
@@ -2151,6 +2331,17 @@ onBeforeUnmount(() => {
                     icon="pi pi-search"
                     @click="handleStartCrawl"
                   />
+
+                  <Button
+                    v-if="canClearScreen"
+                    :disabled="isSubmitting"
+                    class="search-clear"
+                    icon="pi pi-times"
+                    label="Limpar tela"
+                    severity="secondary"
+                    variant="outlined"
+                    @click="handleClearScreen"
+                  />
                 </div>
 
                 <p v-if="selectedProviders.length > 0" class="search-submit-hint">
@@ -2159,11 +2350,35 @@ onBeforeUnmount(() => {
                 </p>
 
                 <Message v-if="formError" severity="error" variant="outlined">
-                  {{ formError }}
+                  <div class="retry-message-content">
+                    <span>{{ formError }}</span>
+                    <Button
+                      :disabled="!canSubmitSearch"
+                      :loading="isSubmitting"
+                      icon="pi pi-refresh"
+                      label="Tentar novamente"
+                      severity="danger"
+                      size="small"
+                      variant="text"
+                      @click="handleRetrySearch"
+                    />
+                  </div>
                 </Message>
 
                 <Message v-if="municipalityLoadError" severity="error" variant="outlined">
-                  {{ municipalityLoadError }}
+                  <div class="retry-message-content">
+                    <span>{{ municipalityLoadError }}</span>
+                    <Button
+                      :disabled="!selectedState"
+                      :loading="isLoadingMunicipalities"
+                      icon="pi pi-refresh"
+                      label="Tentar novamente"
+                      severity="danger"
+                      size="small"
+                      variant="text"
+                      @click="selectedState?.code && loadMunicipalityOptions(selectedState.code)"
+                    />
+                  </div>
                 </Message>
 
                 <div v-if="formErrors.cidade || formErrors.uf || formErrors.providers" class="inline-errors">
@@ -2220,7 +2435,18 @@ onBeforeUnmount(() => {
                     size="small"
                     variant="outlined"
                   >
-                    {{ providerLoadErrors.odontoprev }}
+                    <div class="retry-message-content">
+                      <span>{{ providerLoadErrors.odontoprev }}</span>
+                      <Button
+                        :loading="loadingState.odontoprev.filters"
+                        icon="pi pi-refresh"
+                        label="Tentar novamente"
+                        severity="danger"
+                        size="small"
+                        variant="text"
+                        @click="handleRetryProviderCatalog('odontoprev')"
+                      />
+                    </div>
                   </Message>
 
                   <div class="provider-fields-grid">
@@ -2362,7 +2588,18 @@ onBeforeUnmount(() => {
                     size="small"
                     variant="outlined"
                   >
-                    {{ providerLoadErrors.hapvida }}
+                    <div class="retry-message-content">
+                      <span>{{ providerLoadErrors.hapvida }}</span>
+                      <Button
+                        :loading="isRetryingActiveProvider"
+                        icon="pi pi-refresh"
+                        label="Tentar novamente"
+                        severity="danger"
+                        size="small"
+                        variant="text"
+                        @click="handleRetryProviderCatalog('hapvida')"
+                      />
+                    </div>
                   </Message>
 
                   <Message
@@ -2491,7 +2728,18 @@ onBeforeUnmount(() => {
                     size="small"
                     variant="outlined"
                   >
-                    {{ providerLoadErrors.amil }}
+                    <div class="retry-message-content">
+                      <span>{{ providerLoadErrors.amil }}</span>
+                      <Button
+                        :loading="isRetryingActiveProvider"
+                        icon="pi pi-refresh"
+                        label="Tentar novamente"
+                        severity="danger"
+                        size="small"
+                        variant="text"
+                        @click="handleRetryProviderCatalog('amil')"
+                      />
+                    </div>
                   </Message>
 
                   <Message
@@ -2594,7 +2842,18 @@ onBeforeUnmount(() => {
                     size="small"
                     variant="outlined"
                   >
-                    {{ providerLoadErrors.sulamerica }}
+                    <div class="retry-message-content">
+                      <span>{{ providerLoadErrors.sulamerica }}</span>
+                      <Button
+                        :loading="isRetryingActiveProvider"
+                        icon="pi pi-refresh"
+                        label="Tentar novamente"
+                        severity="danger"
+                        size="small"
+                        variant="text"
+                        @click="handleRetryProviderCatalog('sulamerica')"
+                      />
+                    </div>
                   </Message>
 
                   <Message
@@ -2725,6 +2984,17 @@ onBeforeUnmount(() => {
                     size="small"
                     variant="text"
                     @click="refreshCurrentStatus"
+                  />
+                  <Button
+                    v-if="activeStatus === 'failed'"
+                    :disabled="!canSubmitSearch"
+                    :loading="isSubmitting"
+                    icon="pi pi-replay"
+                    label="Tentar novamente"
+                    severity="danger"
+                    size="small"
+                    variant="outlined"
+                    @click="handleRetrySearch"
                   />
                 </div>
               </div>
@@ -3347,13 +3617,14 @@ onBeforeUnmount(() => {
 
 .search-controls {
   display: grid;
-  grid-template-columns: 6.5rem minmax(0, 1fr) auto;
+  grid-template-columns: 6.5rem minmax(0, 1fr) auto auto;
   gap: 0.65rem;
   align-items: center;
 }
 
 .municipality-select,
 .state-select,
+.search-clear,
 .search-submit {
   min-height: 3rem;
 }
@@ -3374,9 +3645,26 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.search-clear {
+  white-space: nowrap;
+}
+
 .inline-errors {
   display: grid;
   gap: 0.35rem;
+}
+
+.retry-message-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.retry-message-content span {
+  min-width: 0;
+  line-height: 1.45;
 }
 
 .search-submit-hint {
@@ -3649,12 +3937,14 @@ onBeforeUnmount(() => {
     overflow-x: auto;
   }
 
+  .search-clear,
   .search-submit {
     width: 100%;
     justify-content: center;
   }
 
   .results-header,
+  .retry-message-content,
   .status-row,
   .status-actions {
     flex-direction: column;
