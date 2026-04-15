@@ -43,10 +43,12 @@ import type {
   AmilPlanOption,
   AmilProviderOptions,
   DentistSpecialty,
+  HapvidaProviderOptions,
   MunicipalityOption,
   OdontoprevProviderOptions,
   QueueBatchProviderOptions,
   SelectOption,
+  SulamericaProviderOptions,
 } from '../api'
 import { useHomeSearchStore } from '../store'
 
@@ -93,6 +95,27 @@ type DentistLegendIcon = {
   code: string
   label: string
 }
+
+type StartCrawlUiOptions = {
+  forceRefresh?: boolean
+  preferBatch?: boolean
+  providers?: CrawlProvider[]
+}
+
+type SearchSubmissionResult = Awaited<ReturnType<typeof homeSearchStore.startCrawl>>
+
+const DEFAULT_ODONTOPREV_REDE = '241008130'
+const DEFAULT_HAPVIDA_TIPO_CONTRATO = 'Individual/Familiar'
+const DEFAULT_HAPVIDA_PRODUTO = 'Personal Individual'
+const DEFAULT_HAPVIDA_SERVICO = 'CONSULTORIOS/CLINICAS'
+const DEFAULT_HAPVIDA_ESPECIALIDADE = 'Odontologia Clinica'
+const DEFAULT_HAPVIDA_BAIRRO = 'TODOS OS BAIRROS'
+const DEFAULT_AMIL_CODIGO_REDE = '844'
+const DEFAULT_AMIL_PLAN_KEY = `${DEFAULT_AMIL_CODIGO_REDE}::`
+const DEFAULT_AMIL_BAIRRO = 'TODOS OS BAIRROS'
+const DEFAULT_AMIL_ESPECIALIDADE = 'CLINICA GERAL'
+const DEFAULT_SULAMERICA_PRODUTO = '100'
+const DEFAULT_SULAMERICA_PLANO = 'Odonto Mais'
 
 const providerErrors = reactive<Record<CrawlProvider, ProviderFieldErrors>>({
   odontoprev: {},
@@ -147,13 +170,13 @@ const loadingState = reactive({
 
 const odontoprevCatalog = reactive({
   loaded: false,
-  redes: [] as SelectOption[],
+  redes: [{ codigo: DEFAULT_ODONTOPREV_REDE, nome: 'Rede Unna' }] as SelectOption[],
   planos: [] as SelectOption[],
   especialidades: [] as SelectOption[],
 })
 
 const odontoprevForm = reactive({
-  codigoRede: '',
+  codigoRede: DEFAULT_ODONTOPREV_REDE,
   codigoPlano: '',
   codigoEspecialidade: '',
   isEspecialista: false,
@@ -164,47 +187,63 @@ const odontoprevForm = reactive({
 })
 
 const hapvidaCatalog = reactive({
-  contractTypes: [] as SelectOption[],
-  products: [] as SelectOption[],
+  contractTypes: [
+    { codigo: DEFAULT_HAPVIDA_TIPO_CONTRATO, nome: DEFAULT_HAPVIDA_TIPO_CONTRATO },
+  ] as SelectOption[],
+  products: [{ codigo: DEFAULT_HAPVIDA_PRODUTO, nome: DEFAULT_HAPVIDA_PRODUTO }] as SelectOption[],
   states: [] as SelectOption[],
   cities: [] as SelectOption[],
-  services: [] as SelectOption[],
-  specialties: [] as SelectOption[],
-  neighborhoods: [] as SelectOption[],
+  services: [{ codigo: DEFAULT_HAPVIDA_SERVICO, nome: DEFAULT_HAPVIDA_SERVICO }] as SelectOption[],
+  specialties: [
+    { codigo: DEFAULT_HAPVIDA_ESPECIALIDADE, nome: DEFAULT_HAPVIDA_ESPECIALIDADE },
+  ] as SelectOption[],
+  neighborhoods: [{ codigo: DEFAULT_HAPVIDA_BAIRRO, nome: DEFAULT_HAPVIDA_BAIRRO }] as SelectOption[],
 })
 
 const hapvidaForm = reactive({
-  tipoContrato: '',
-  produto: '',
-  servico: '',
-  especialidade: '',
-  bairro: '',
+  tipoContrato: DEFAULT_HAPVIDA_TIPO_CONTRATO,
+  produto: DEFAULT_HAPVIDA_PRODUTO,
+  servico: DEFAULT_HAPVIDA_SERVICO,
+  especialidade: DEFAULT_HAPVIDA_ESPECIALIDADE,
+  bairro: DEFAULT_HAPVIDA_BAIRRO,
 })
 
 const amilCatalog = reactive({
-  plans: [] as AmilPlanOption[],
+  plans: [
+    {
+      codigoRede: DEFAULT_AMIL_CODIGO_REDE,
+      codigoPlano: null,
+      nome: 'Rede Amil Dental',
+      operadora: null,
+      linha: null,
+      uri: null,
+      tipo: 'rede',
+      key: DEFAULT_AMIL_PLAN_KEY,
+      displayName: 'Rede Amil Dental · Rede',
+    },
+  ] as AmilPlanOption[],
   states: [] as SelectOption[],
   cities: [] as SelectOption[],
-  neighborhoods: [] as SelectOption[],
-  specialties: [] as SelectOption[],
+  neighborhoods: [{ codigo: DEFAULT_AMIL_BAIRRO, nome: DEFAULT_AMIL_BAIRRO }] as SelectOption[],
+  specialties: [{ codigo: DEFAULT_AMIL_ESPECIALIDADE, nome: DEFAULT_AMIL_ESPECIALIDADE }] as SelectOption[],
 })
 
 const amilForm = reactive({
-  selectedPlanKey: '',
-  bairro: '',
-  especialidade: '',
+  selectedPlanKey: DEFAULT_AMIL_PLAN_KEY,
+  bairro: DEFAULT_AMIL_BAIRRO,
+  especialidade: DEFAULT_AMIL_ESPECIALIDADE,
 })
 
 const sulamericaCatalog = reactive({
-  products: [] as SelectOption[],
-  plans: [] as SelectOption[],
+  products: [{ codigo: DEFAULT_SULAMERICA_PRODUTO, nome: 'Odonto Individual' }] as SelectOption[],
+  plans: [{ codigo: DEFAULT_SULAMERICA_PLANO, nome: DEFAULT_SULAMERICA_PLANO }] as SelectOption[],
   cities: [] as SelectOption[],
   hours: [] as SelectOption[],
 })
 
 const sulamericaForm = reactive({
-  produto: '',
-  plano: '',
+  produto: DEFAULT_SULAMERICA_PRODUTO,
+  plano: DEFAULT_SULAMERICA_PLANO,
   horarioInicial: '',
   horarioFinal: '',
 })
@@ -296,33 +335,7 @@ const searchStateOptions = computed(() => {
   return filteredOptions
 })
 
-const hasRequiredProviderFilters = computed(() => {
-  return selectedProviders.value.every((provider) => {
-    if (provider === 'odontoprev') {
-      const hasNetwork = Boolean(odontoprevForm.codigoRede)
-      const hasPlan = Boolean(odontoprevForm.codigoPlano)
-
-      return hasNetwork !== hasPlan
-    }
-
-    if (provider === 'hapvida') {
-      return Boolean(
-        hapvidaForm.tipoContrato &&
-          hapvidaForm.produto &&
-          hapvidaForm.servico &&
-          hapvidaForm.especialidade,
-      )
-    }
-
-    if (provider === 'amil') {
-      return Boolean(amilForm.selectedPlanKey && amilForm.bairro && amilForm.especialidade)
-    }
-
-    return Boolean(sulamericaForm.produto && sulamericaForm.plano)
-  })
-})
-
-const canSubmitSearch = computed(() => canSearch.value && hasRequiredProviderFilters.value)
+const canSubmitSearch = computed(() => canSearch.value)
 
 const canClearScreen = computed(
   () =>
@@ -656,82 +669,90 @@ const isAmilCityCompatible = computed(() => {
 })
 
 function resetHapvidaProductsAndBelow() {
-  hapvidaForm.produto = ''
-  hapvidaForm.servico = ''
-  hapvidaForm.especialidade = ''
-  hapvidaForm.bairro = ''
-  hapvidaCatalog.products = []
+  hapvidaForm.produto = DEFAULT_HAPVIDA_PRODUTO
+  hapvidaForm.servico = DEFAULT_HAPVIDA_SERVICO
+  hapvidaForm.especialidade = DEFAULT_HAPVIDA_ESPECIALIDADE
+  hapvidaForm.bairro = DEFAULT_HAPVIDA_BAIRRO
+  hapvidaCatalog.products = [{ codigo: DEFAULT_HAPVIDA_PRODUTO, nome: DEFAULT_HAPVIDA_PRODUTO }]
   hapvidaCatalog.states = []
   hapvidaCatalog.cities = []
-  hapvidaCatalog.services = []
-  hapvidaCatalog.specialties = []
-  hapvidaCatalog.neighborhoods = []
+  hapvidaCatalog.services = [{ codigo: DEFAULT_HAPVIDA_SERVICO, nome: DEFAULT_HAPVIDA_SERVICO }]
+  hapvidaCatalog.specialties = [
+    { codigo: DEFAULT_HAPVIDA_ESPECIALIDADE, nome: DEFAULT_HAPVIDA_ESPECIALIDADE },
+  ]
+  hapvidaCatalog.neighborhoods = [{ codigo: DEFAULT_HAPVIDA_BAIRRO, nome: DEFAULT_HAPVIDA_BAIRRO }]
 }
 
 function resetHapvidaStatesAndBelow() {
-  hapvidaForm.servico = ''
-  hapvidaForm.especialidade = ''
-  hapvidaForm.bairro = ''
+  hapvidaForm.servico = DEFAULT_HAPVIDA_SERVICO
+  hapvidaForm.especialidade = DEFAULT_HAPVIDA_ESPECIALIDADE
+  hapvidaForm.bairro = DEFAULT_HAPVIDA_BAIRRO
   hapvidaCatalog.states = []
   hapvidaCatalog.cities = []
-  hapvidaCatalog.services = []
-  hapvidaCatalog.specialties = []
-  hapvidaCatalog.neighborhoods = []
+  hapvidaCatalog.services = [{ codigo: DEFAULT_HAPVIDA_SERVICO, nome: DEFAULT_HAPVIDA_SERVICO }]
+  hapvidaCatalog.specialties = [
+    { codigo: DEFAULT_HAPVIDA_ESPECIALIDADE, nome: DEFAULT_HAPVIDA_ESPECIALIDADE },
+  ]
+  hapvidaCatalog.neighborhoods = [{ codigo: DEFAULT_HAPVIDA_BAIRRO, nome: DEFAULT_HAPVIDA_BAIRRO }]
 }
 
 function resetHapvidaServicesAndBelow() {
-  hapvidaForm.servico = ''
-  hapvidaForm.especialidade = ''
-  hapvidaForm.bairro = ''
-  hapvidaCatalog.services = []
-  hapvidaCatalog.specialties = []
-  hapvidaCatalog.neighborhoods = []
+  hapvidaForm.servico = DEFAULT_HAPVIDA_SERVICO
+  hapvidaForm.especialidade = DEFAULT_HAPVIDA_ESPECIALIDADE
+  hapvidaForm.bairro = DEFAULT_HAPVIDA_BAIRRO
+  hapvidaCatalog.services = [{ codigo: DEFAULT_HAPVIDA_SERVICO, nome: DEFAULT_HAPVIDA_SERVICO }]
+  hapvidaCatalog.specialties = [
+    { codigo: DEFAULT_HAPVIDA_ESPECIALIDADE, nome: DEFAULT_HAPVIDA_ESPECIALIDADE },
+  ]
+  hapvidaCatalog.neighborhoods = [{ codigo: DEFAULT_HAPVIDA_BAIRRO, nome: DEFAULT_HAPVIDA_BAIRRO }]
 }
 
 function resetHapvidaSpecialtiesAndBelow() {
-  hapvidaForm.especialidade = ''
-  hapvidaForm.bairro = ''
-  hapvidaCatalog.specialties = []
-  hapvidaCatalog.neighborhoods = []
+  hapvidaForm.especialidade = DEFAULT_HAPVIDA_ESPECIALIDADE
+  hapvidaForm.bairro = DEFAULT_HAPVIDA_BAIRRO
+  hapvidaCatalog.specialties = [
+    { codigo: DEFAULT_HAPVIDA_ESPECIALIDADE, nome: DEFAULT_HAPVIDA_ESPECIALIDADE },
+  ]
+  hapvidaCatalog.neighborhoods = [{ codigo: DEFAULT_HAPVIDA_BAIRRO, nome: DEFAULT_HAPVIDA_BAIRRO }]
 }
 
 function resetHapvidaNeighborhoods() {
-  hapvidaForm.bairro = ''
-  hapvidaCatalog.neighborhoods = []
+  hapvidaForm.bairro = DEFAULT_HAPVIDA_BAIRRO
+  hapvidaCatalog.neighborhoods = [{ codigo: DEFAULT_HAPVIDA_BAIRRO, nome: DEFAULT_HAPVIDA_BAIRRO }]
 }
 
 function resetAmilStatesAndBelow() {
-  amilForm.bairro = ''
-  amilForm.especialidade = ''
+  amilForm.bairro = DEFAULT_AMIL_BAIRRO
+  amilForm.especialidade = DEFAULT_AMIL_ESPECIALIDADE
   amilCatalog.states = []
   amilCatalog.cities = []
-  amilCatalog.neighborhoods = []
-  amilCatalog.specialties = []
+  amilCatalog.neighborhoods = [{ codigo: DEFAULT_AMIL_BAIRRO, nome: DEFAULT_AMIL_BAIRRO }]
+  amilCatalog.specialties = [{ codigo: DEFAULT_AMIL_ESPECIALIDADE, nome: DEFAULT_AMIL_ESPECIALIDADE }]
 }
 
 function resetAmilCitiesAndBelow() {
-  amilForm.bairro = ''
-  amilForm.especialidade = ''
+  amilForm.bairro = DEFAULT_AMIL_BAIRRO
+  amilForm.especialidade = DEFAULT_AMIL_ESPECIALIDADE
   amilCatalog.cities = []
-  amilCatalog.neighborhoods = []
-  amilCatalog.specialties = []
+  amilCatalog.neighborhoods = [{ codigo: DEFAULT_AMIL_BAIRRO, nome: DEFAULT_AMIL_BAIRRO }]
+  amilCatalog.specialties = [{ codigo: DEFAULT_AMIL_ESPECIALIDADE, nome: DEFAULT_AMIL_ESPECIALIDADE }]
 }
 
 function resetAmilNeighborhoodsAndBelow() {
-  amilForm.bairro = ''
-  amilForm.especialidade = ''
-  amilCatalog.neighborhoods = []
-  amilCatalog.specialties = []
+  amilForm.bairro = DEFAULT_AMIL_BAIRRO
+  amilForm.especialidade = DEFAULT_AMIL_ESPECIALIDADE
+  amilCatalog.neighborhoods = [{ codigo: DEFAULT_AMIL_BAIRRO, nome: DEFAULT_AMIL_BAIRRO }]
+  amilCatalog.specialties = [{ codigo: DEFAULT_AMIL_ESPECIALIDADE, nome: DEFAULT_AMIL_ESPECIALIDADE }]
 }
 
 function resetAmilSpecialties() {
-  amilForm.especialidade = ''
-  amilCatalog.specialties = []
+  amilForm.especialidade = DEFAULT_AMIL_ESPECIALIDADE
+  amilCatalog.specialties = [{ codigo: DEFAULT_AMIL_ESPECIALIDADE, nome: DEFAULT_AMIL_ESPECIALIDADE }]
 }
 
 function resetSulamericaPlansAndBelow() {
-  sulamericaForm.plano = ''
-  sulamericaCatalog.plans = []
+  sulamericaForm.plano = DEFAULT_SULAMERICA_PLANO
+  sulamericaCatalog.plans = [{ codigo: DEFAULT_SULAMERICA_PLANO, nome: DEFAULT_SULAMERICA_PLANO }]
   sulamericaCatalog.cities = []
 }
 
@@ -740,7 +761,7 @@ function resetSulamericaCitiesAndBelow() {
 }
 
 function resetOdontoprevForm() {
-  odontoprevForm.codigoRede = ''
+  odontoprevForm.codigoRede = DEFAULT_ODONTOPREV_REDE
   odontoprevForm.codigoPlano = ''
   odontoprevForm.codigoEspecialidade = ''
   odontoprevForm.isEspecialista = false
@@ -753,16 +774,20 @@ function resetOdontoprevForm() {
 function resetProviderFilters() {
   resetOdontoprevForm()
 
-  hapvidaForm.tipoContrato = ''
-  resetHapvidaProductsAndBelow()
+  hapvidaForm.tipoContrato = DEFAULT_HAPVIDA_TIPO_CONTRATO
+  hapvidaForm.produto = DEFAULT_HAPVIDA_PRODUTO
+  hapvidaForm.servico = DEFAULT_HAPVIDA_SERVICO
+  hapvidaForm.especialidade = DEFAULT_HAPVIDA_ESPECIALIDADE
+  hapvidaForm.bairro = DEFAULT_HAPVIDA_BAIRRO
 
-  amilForm.selectedPlanKey = ''
-  resetAmilStatesAndBelow()
+  amilForm.selectedPlanKey = DEFAULT_AMIL_PLAN_KEY
+  amilForm.bairro = DEFAULT_AMIL_BAIRRO
+  amilForm.especialidade = DEFAULT_AMIL_ESPECIALIDADE
 
-  sulamericaForm.produto = ''
+  sulamericaForm.produto = DEFAULT_SULAMERICA_PRODUTO
+  sulamericaForm.plano = DEFAULT_SULAMERICA_PLANO
   sulamericaForm.horarioInicial = ''
   sulamericaForm.horarioFinal = ''
-  resetSulamericaPlansAndBelow()
 }
 
 function clearProviderFeedback() {
@@ -787,6 +812,10 @@ function isProviderCatalogLoading(provider: CrawlProvider) {
   }
 
   return Object.values(loadingState.sulamerica).some(Boolean)
+}
+
+function isProviderPanelActive(provider: CrawlProvider) {
+  return activeProviderPanel.value === provider
 }
 
 async function loadOdontoprevCatalog(force = false) {
@@ -1180,12 +1209,6 @@ async function loadSulamericaHourOptions(force = false) {
 
   try {
     sulamericaCatalog.hours = await getSulamericaHours(authStore.token)
-
-    if (!sulamericaForm.horarioInicial && sulamericaCatalog.hours.length > 0) {
-      sulamericaForm.horarioInicial = sulamericaCatalog.hours[0]?.codigo ?? ''
-      sulamericaForm.horarioFinal =
-        sulamericaCatalog.hours[sulamericaCatalog.hours.length - 1]?.codigo ?? ''
-    }
   } catch (error) {
     await handleCatalogFailure('sulamerica', error, 'Nao foi possivel carregar os horarios da SulAmerica.')
   } finally {
@@ -1315,6 +1338,10 @@ async function handleRetryProviderCatalog(provider: CrawlProvider) {
   await retrySulamericaCatalog()
 }
 
+function handleOpenProviderPanel(provider: CrawlProvider) {
+  activeProviderPanel.value = provider
+}
+
 function validateProviderFilters() {
   resetProviderErrors()
 
@@ -1323,50 +1350,8 @@ function validateProviderFilters() {
       const hasNetwork = Boolean(odontoprevForm.codigoRede)
       const hasPlan = Boolean(odontoprevForm.codigoPlano)
 
-      if (hasNetwork === hasPlan) {
-        providerErrors.odontoprev.selection = 'Selecione exatamente uma Rede ou um Plano.'
-      }
-    }
-
-    if (provider === 'hapvida') {
-      if (!hapvidaForm.tipoContrato) {
-        providerErrors.hapvida.tipoContrato = 'Selecione o tipo de contrato.'
-      }
-
-      if (!hapvidaForm.produto) {
-        providerErrors.hapvida.produto = 'Selecione o produto.'
-      }
-
-      if (!hapvidaForm.servico) {
-        providerErrors.hapvida.servico = 'Selecione o servico.'
-      }
-
-      if (!hapvidaForm.especialidade) {
-        providerErrors.hapvida.especialidade = 'Selecione a especialidade.'
-      }
-    }
-
-    if (provider === 'amil') {
-      if (!amilForm.selectedPlanKey) {
-        providerErrors.amil.plan = 'Selecione uma rede ou um plano.'
-      }
-
-      if (!amilForm.bairro) {
-        providerErrors.amil.bairro = 'Selecione o bairro.'
-      }
-
-      if (!amilForm.especialidade) {
-        providerErrors.amil.especialidade = 'Selecione a especialidade.'
-      }
-    }
-
-    if (provider === 'sulamerica') {
-      if (!sulamericaForm.produto) {
-        providerErrors.sulamerica.produto = 'Selecione o produto.'
-      }
-
-      if (!sulamericaForm.plano) {
-        providerErrors.sulamerica.plano = 'Selecione o plano.'
+      if (hasNetwork && hasPlan) {
+        providerErrors.odontoprev.selection = 'Selecione rede ou plano, nao os dois.'
       }
     }
   }
@@ -1379,18 +1364,27 @@ function validateProviderFilters() {
   )
 }
 
-function buildProviderOptionsPayload(): QueueBatchProviderOptions {
+function hasProviderOptions(options: Record<string, unknown>) {
+  return Object.keys(options).length > 0
+}
+
+function buildProviderOptionsPayload(options: StartCrawlUiOptions = {}): QueueBatchProviderOptions | undefined {
   const nextOptions: QueueBatchProviderOptions = {}
+  const providers = options.providers ?? selectedProviders.value
+  const shouldForceRefresh = (provider: CrawlProvider) =>
+    Boolean(options.forceRefresh && (options.preferBatch || provider === 'amil'))
 
-  if (selectedProviders.value.includes('odontoprev')) {
+  if (providers.includes('odontoprev')) {
     const odontoprevOptions: OdontoprevProviderOptions = {}
-
-    if (odontoprevForm.codigoRede) {
-      odontoprevOptions.codigoRede = odontoprevForm.codigoRede
-    }
 
     if (odontoprevForm.codigoPlano) {
       odontoprevOptions.codigoPlano = odontoprevForm.codigoPlano
+    } else if (odontoprevForm.codigoRede && odontoprevForm.codigoRede !== DEFAULT_ODONTOPREV_REDE) {
+      odontoprevOptions.codigoRede = odontoprevForm.codigoRede
+    }
+
+    if (shouldForceRefresh('odontoprev')) {
+      odontoprevOptions.forceRefresh = true
     }
 
     if (odontoprevForm.codigoEspecialidade) {
@@ -1417,44 +1411,90 @@ function buildProviderOptionsPayload(): QueueBatchProviderOptions {
       odontoprevOptions.idioma = trimValue(odontoprevForm.idioma)
     }
 
-    nextOptions.odontoprev = odontoprevOptions
-  }
-
-  if (selectedProviders.value.includes('hapvida')) {
-    nextOptions.hapvida = {
-      tipoContrato: hapvidaForm.tipoContrato,
-      produto: hapvidaForm.produto,
-      servico: hapvidaForm.servico,
-      especialidade: hapvidaForm.especialidade,
-      ...(hapvidaForm.bairro ? { bairro: hapvidaForm.bairro } : {}),
+    if (hasProviderOptions(odontoprevOptions)) {
+      nextOptions.odontoprev = odontoprevOptions
     }
   }
 
-  if (selectedProviders.value.includes('amil') && selectedAmilPlan.value) {
-    const amilOptions: AmilProviderOptions = {
-      codigoRede: selectedAmilPlan.value.codigoRede,
-      bairro: amilForm.bairro,
-      tipoServico: 'DENTAL',
-      especialidade: amilForm.especialidade,
+  if (providers.includes('hapvida')) {
+    const hapvidaOptions: HapvidaProviderOptions = {
+      ...(hapvidaForm.tipoContrato && hapvidaForm.tipoContrato !== DEFAULT_HAPVIDA_TIPO_CONTRATO
+        ? { tipoContrato: hapvidaForm.tipoContrato }
+        : {}),
+      ...(hapvidaForm.produto && hapvidaForm.produto !== DEFAULT_HAPVIDA_PRODUTO
+        ? { produto: hapvidaForm.produto }
+        : {}),
+      ...(hapvidaForm.servico && hapvidaForm.servico !== DEFAULT_HAPVIDA_SERVICO
+        ? { servico: hapvidaForm.servico }
+        : {}),
+      ...(hapvidaForm.especialidade && hapvidaForm.especialidade !== DEFAULT_HAPVIDA_ESPECIALIDADE
+        ? { especialidade: hapvidaForm.especialidade }
+        : {}),
+      ...(hapvidaForm.bairro && hapvidaForm.bairro !== DEFAULT_HAPVIDA_BAIRRO
+        ? { bairro: hapvidaForm.bairro }
+        : {}),
+      ...(shouldForceRefresh('hapvida') ? { forceRefresh: true } : {}),
     }
 
-    if (selectedAmilPlan.value.codigoPlano) {
-      amilOptions.codigoPlano = selectedAmilPlan.value.codigoPlano
+    if (hasProviderOptions(hapvidaOptions)) {
+      nextOptions.hapvida = hapvidaOptions
     }
-
-    nextOptions.amil = amilOptions
   }
 
-  if (selectedProviders.value.includes('sulamerica')) {
-    nextOptions.sulamerica = {
-      produto: sulamericaForm.produto,
-      plano: sulamericaForm.plano,
+  if (providers.includes('amil')) {
+    const amilOptions: AmilProviderOptions = {}
+
+    if (selectedAmilPlan.value && amilForm.selectedPlanKey !== DEFAULT_AMIL_PLAN_KEY) {
+      amilOptions.codigoRede = selectedAmilPlan.value.codigoRede
+
+      if (selectedAmilPlan.value.codigoPlano) {
+        amilOptions.codigoPlano = selectedAmilPlan.value.codigoPlano
+      }
+    } else if (amilForm.selectedPlanKey && amilForm.selectedPlanKey !== DEFAULT_AMIL_PLAN_KEY) {
+      const [codigoRede, codigoPlano] = amilForm.selectedPlanKey.split('::')
+      amilOptions.codigoRede = codigoRede
+
+      if (codigoPlano) {
+        amilOptions.codigoPlano = codigoPlano
+      }
+    }
+
+    if (amilForm.bairro && amilForm.bairro !== DEFAULT_AMIL_BAIRRO) {
+      amilOptions.bairro = amilForm.bairro
+    }
+
+    if (amilForm.especialidade && amilForm.especialidade !== DEFAULT_AMIL_ESPECIALIDADE) {
+      amilOptions.especialidade = amilForm.especialidade
+    }
+
+    if (shouldForceRefresh('amil')) {
+      amilOptions.forceRefresh = true
+    }
+
+    if (hasProviderOptions(amilOptions)) {
+      nextOptions.amil = amilOptions
+    }
+  }
+
+  if (providers.includes('sulamerica')) {
+    const sulamericaOptions: SulamericaProviderOptions = {
+      ...(sulamericaForm.produto && sulamericaForm.produto !== DEFAULT_SULAMERICA_PRODUTO
+        ? { produto: sulamericaForm.produto }
+        : {}),
+      ...(sulamericaForm.plano && sulamericaForm.plano !== DEFAULT_SULAMERICA_PLANO
+        ? { plano: sulamericaForm.plano }
+        : {}),
       ...(sulamericaForm.horarioInicial ? { horarioInicial: sulamericaForm.horarioInicial } : {}),
       ...(sulamericaForm.horarioFinal ? { horarioFinal: sulamericaForm.horarioFinal } : {}),
+      ...(shouldForceRefresh('sulamerica') ? { forceRefresh: true } : {}),
+    }
+
+    if (hasProviderOptions(sulamericaOptions)) {
+      nextOptions.sulamerica = sulamericaOptions
     }
   }
 
-  return nextOptions
+  return Object.keys(nextOptions).length > 0 ? nextOptions : undefined
 }
 
 function formatStatusLabel(status: CrawlBatchStatus | CrawlJobStatus | null | undefined) {
@@ -1806,7 +1846,123 @@ function handleClearScreen() {
   })
 }
 
-async function handleStartCrawl() {
+function getFailedRetryProviders() {
+  if (
+    currentBatch.value &&
+    (currentBatch.value.status === 'partial_failed' || currentBatch.value.status === 'failed')
+  ) {
+    const providers = currentBatch.value.jobs
+      .filter((job) => job.status === 'failed')
+      .map((job) => job.provider)
+
+    return [...new Set(providers.length > 0 ? providers : currentBatch.value.jobs.map((job) => job.provider))]
+  }
+
+  if (currentJob.value?.status === 'failed') {
+    return [currentJob.value.provider]
+  }
+
+  return selectedProviders.value
+}
+
+function getSearchProviders(options: StartCrawlUiOptions) {
+  return options.providers ?? selectedProviders.value
+}
+
+function getProviderFromApiError(error: unknown, providers: CrawlProvider[]) {
+  if (!isApiError(error)) {
+    return null
+  }
+
+  const normalizedMessage = error.message.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+
+  return (
+    providers.find((provider) => {
+      const normalizedLabel = formatProviderLabel(provider)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+
+      return normalizedMessage.includes(provider) || normalizedMessage.includes(normalizedLabel)
+    }) ?? null
+  )
+}
+
+function shouldRetryWithoutProvider(error: unknown, options: StartCrawlUiOptions) {
+  const providers = getSearchProviders(options)
+  const failedProvider = getProviderFromApiError(error, providers)
+
+  if (!failedProvider || providers.length <= 1) {
+    return null
+  }
+
+  return failedProvider
+}
+
+async function submitSearch(options: StartCrawlUiOptions = {}): Promise<SearchSubmissionResult> {
+  const token = authStore.token
+
+  if (!token) {
+    await router.push('/login')
+    return null
+  }
+
+  const result = await homeSearchStore.startCrawl(token, {
+    preferBatch: options.preferBatch,
+    providerOptions: buildProviderOptionsPayload(options),
+    providers: options.providers,
+  })
+
+  if (!result) {
+    return null
+  }
+
+  toast.add({
+    severity: 'success',
+    summary:
+      result.type === 'batch'
+        ? 'Lote enviado com sucesso.'
+        : 'Busca enviada com sucesso.',
+    detail: result.type === 'batch' ? `Batch ${result.response.batchId}` : `Job ${result.response.jobId}`,
+    life: 3000,
+  })
+
+  if (result.type === 'batch') {
+    await homeSearchStore.refreshCurrentBatch(token)
+  } else {
+    await homeSearchStore.refreshCurrentJob(token)
+  }
+
+  await loadResultsForCurrentSearch(true)
+
+  return result
+}
+
+async function retrySearchWithoutProvider(provider: CrawlProvider, options: StartCrawlUiOptions, reason: string) {
+  const providers = getSearchProviders(options).filter((value) => value !== provider)
+
+  if (providers.length === 0) {
+    return null
+  }
+
+  formError.value = ''
+  formErrors.value = {}
+
+  toast.add({
+    severity: 'warn',
+    summary: `${formatProviderLabel(provider)} ficou fora desta busca.`,
+    detail: reason,
+    life: 5000,
+  })
+
+  return submitSearch({
+    ...options,
+    preferBatch: true,
+    providers,
+  })
+}
+
+async function handleStartCrawl(options: StartCrawlUiOptions = {}) {
   if (!authStore.token) {
     await router.push('/login')
     return
@@ -1815,7 +1971,7 @@ async function handleStartCrawl() {
   if (!validateProviderFilters()) {
     toast.add({
       severity: 'warn',
-      summary: 'Preencha os filtros obrigatorios do provider selecionado.',
+      summary: 'Revise os filtros do provider selecionado.',
       life: 3500,
     })
 
@@ -1823,37 +1979,28 @@ async function handleStartCrawl() {
   }
 
   try {
-    const result = await homeSearchStore.startCrawl(authStore.token, {
-      providerOptions: buildProviderOptionsPayload(),
-    })
-
-    if (!result) {
-      return
-    }
-
-    toast.add({
-      severity: 'success',
-      summary:
-        result.type === 'batch'
-          ? 'Lote enviado com sucesso.'
-          : 'Busca enviada com sucesso.',
-      detail: result.type === 'batch' ? `Batch ${result.response.batchId}` : `Job ${result.response.jobId}`,
-      life: 3000,
-    })
-
-    if (result.type === 'batch') {
-      await homeSearchStore.refreshCurrentBatch(authStore.token)
-    } else {
-      await homeSearchStore.refreshCurrentJob(authStore.token)
-    }
-
-    await loadResultsForCurrentSearch(true)
+    await submitSearch(options)
   } catch (error) {
     if (await handleUnauthorized(error)) {
       return
     }
 
-    if (isApiError(error) && !error.validationErrors) {
+    const failedProvider = shouldRetryWithoutProvider(error, options)
+
+    if (failedProvider && isApiError(error)) {
+      try {
+        await retrySearchWithoutProvider(failedProvider, options, error.message)
+        return
+      } catch (retryError) {
+        if (await handleUnauthorized(retryError)) {
+          return
+        }
+
+        error = retryError
+      }
+    }
+
+    if (isApiError(error) && Object.keys(error.validationErrors).length === 0) {
       toast.add({
         severity: 'error',
         summary: error.message,
@@ -1865,7 +2012,14 @@ async function handleStartCrawl() {
 
 async function handleRetrySearch() {
   formError.value = ''
-  await handleStartCrawl()
+  await handleStartCrawl({
+    forceRefresh: true,
+    preferBatch: Boolean(
+      currentBatch.value &&
+        (currentBatch.value.status === 'failed' || currentBatch.value.status === 'partial_failed'),
+    ),
+    providers: getFailedRetryProviders(),
+  })
 }
 
 async function refreshCurrentStatus() {
@@ -1925,25 +2079,8 @@ watch(
 
     if (providers.length === 0) {
       activeProviderPanel.value = null
-    } else if (!activeProviderPanel.value || !providers.includes(activeProviderPanel.value)) {
-      activeProviderPanel.value = providers[0] ?? null
-    }
-
-    if (providers.includes('odontoprev')) {
-      void loadOdontoprevCatalog()
-    }
-
-    if (providers.includes('hapvida')) {
-      void loadHapvidaContractTypeOptions()
-    }
-
-    if (providers.includes('amil')) {
-      void loadAmilPlanOptions()
-    }
-
-    if (providers.includes('sulamerica')) {
-      void loadSulamericaProductOptions()
-      void loadSulamericaHourOptions()
+    } else if (activeProviderPanel.value && !providers.includes(activeProviderPanel.value)) {
+      activeProviderPanel.value = null
     }
   },
   { immediate: true },
@@ -1958,7 +2095,7 @@ watch(
 
     resetAmilStatesAndBelow()
 
-    if (value && selectedProviders.value.includes('amil')) {
+    if (value && selectedProviders.value.includes('amil') && isProviderPanelActive('amil')) {
       void loadAmilStateOptions()
 
       if (selectedState.value?.code) {
@@ -1977,7 +2114,7 @@ watch(
 
     resetHapvidaProductsAndBelow()
 
-    if (value && selectedProviders.value.includes('hapvida')) {
+    if (value && selectedProviders.value.includes('hapvida') && isProviderPanelActive('hapvida')) {
       void loadHapvidaProductsOptions()
     }
   },
@@ -1992,7 +2129,7 @@ watch(
 
     resetHapvidaStatesAndBelow()
 
-    if (value && selectedProviders.value.includes('hapvida')) {
+    if (value && selectedProviders.value.includes('hapvida') && isProviderPanelActive('hapvida')) {
       void loadHapvidaStateOptions()
 
       if (selectedState.value?.code) {
@@ -2019,17 +2156,17 @@ watch(
       void loadMunicipalityOptions(value)
     }
 
-    if (hapvidaForm.produto) {
+    if (hapvidaForm.produto && isProviderPanelActive('hapvida')) {
       resetHapvidaServicesAndBelow()
       void loadHapvidaCityOptions()
     }
 
-    if (selectedAmilPlan.value) {
+    if (selectedAmilPlan.value && isProviderPanelActive('amil')) {
       resetAmilCitiesAndBelow()
       void loadAmilCityOptions()
     }
 
-    if (sulamericaForm.produto && sulamericaForm.plano) {
+    if (sulamericaForm.produto && sulamericaForm.plano && isProviderPanelActive('sulamerica')) {
       resetSulamericaCitiesAndBelow()
       void loadSulamericaCityOptions()
     }
@@ -2057,7 +2194,7 @@ watch(
       return
     }
 
-    if (hapvidaForm.produto && selectedState.value?.code) {
+    if (hapvidaForm.produto && selectedState.value?.code && isProviderPanelActive('hapvida')) {
       resetHapvidaServicesAndBelow()
 
       if (value) {
@@ -2065,7 +2202,7 @@ watch(
       }
     }
 
-    if (selectedAmilPlan.value && selectedState.value?.code) {
+    if (selectedAmilPlan.value && selectedState.value?.code && isProviderPanelActive('amil')) {
       resetAmilNeighborhoodsAndBelow()
 
       if (value) {
@@ -2085,7 +2222,7 @@ watch(
 
     resetAmilSpecialties()
 
-    if (value) {
+    if (value && isProviderPanelActive('amil')) {
       void loadAmilSpecialtyOptions()
     }
   },
@@ -2100,7 +2237,7 @@ watch(
 
     resetHapvidaSpecialtiesAndBelow()
 
-    if (value) {
+    if (value && isProviderPanelActive('hapvida')) {
       void loadHapvidaSpecialtyOptions()
     }
   },
@@ -2115,7 +2252,7 @@ watch(
 
     resetHapvidaNeighborhoods()
 
-    if (value) {
+    if (value && isProviderPanelActive('hapvida')) {
       void loadHapvidaNeighborhoodOptions()
     }
   },
@@ -2130,7 +2267,7 @@ watch(
 
     resetSulamericaPlansAndBelow()
 
-    if (value && selectedProviders.value.includes('sulamerica')) {
+    if (value && selectedProviders.value.includes('sulamerica') && isProviderPanelActive('sulamerica')) {
       void loadSulamericaPlanOptions()
     }
   },
@@ -2145,7 +2282,7 @@ watch(
 
     resetSulamericaCitiesAndBelow()
 
-    if (value && selectedState.value?.code) {
+    if (value && selectedState.value?.code && isProviderPanelActive('sulamerica')) {
       void loadSulamericaCityOptions()
     }
   },
@@ -2329,7 +2466,7 @@ onBeforeUnmount(() => {
                     :loading="isSubmitting"
                     class="search-submit"
                     icon="pi pi-search"
-                    @click="handleStartCrawl"
+                    @click="() => handleStartCrawl()"
                   />
 
                   <Button
@@ -2413,7 +2550,7 @@ onBeforeUnmount(() => {
                   :variant="activeProviderPanel === option.value ? undefined : 'outlined'"
                   rounded
                   size="small"
-                  @click="activeProviderPanel = option.value"
+                  @click="handleOpenProviderPanel(option.value)"
                 />
               </div>
             </div>
@@ -3011,6 +3148,16 @@ onBeforeUnmount(() => {
                 </div>
               </template>
             </div>
+            <Button
+              v-if="isPartialFailedState"
+              :loading="isSubmitting"
+              icon="pi pi-replay"
+              label="Tentar falhas novamente"
+              severity="warn"
+              size="small"
+              variant="outlined"
+              @click="handleRetrySearch"
+            />
           </div>
         </div>
       </section>

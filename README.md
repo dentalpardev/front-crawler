@@ -99,7 +99,7 @@ O projeto usa PrimeVue da forma nativa recomendada:
 - `darkModeSelector: '.app-dark'`
 - customizacao de tokens em [src/app/primevue.ts](/home/gabrielayala/Workspace/Advize/front-crawler/src/app/primevue.ts)
 
-Sempre que houver implementacao de componentes PrimeVue no projeto, a referencia local de componentes esta em [primevue-full-docs.md](/home/gabrielayala/Workspace/Advize/front-crawler/primevue-full-docs.md).
+Sempre que houver implementacao de componentes PrimeVue no projeto, a referencia local de componentes esta em [primevue-full-docs.txt](/home/gabrielayala/Workspace/Advize/front-crawler/primevue-full-docs.txt).
 
 ## Requisitos
 

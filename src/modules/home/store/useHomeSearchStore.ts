@@ -43,7 +43,9 @@ export type StartCrawlResult =
     }
 
 export type StartCrawlOptions = {
+  preferBatch?: boolean
   providerOptions?: QueueBatchProviderOptions
+  providers?: CrawlProvider[]
 }
 
 const stateOptions: StateOption[] = [
@@ -83,6 +85,8 @@ const providerOptions: ProviderOption[] = [
   { label: 'SulAmerica', value: 'sulamerica' },
 ]
 
+const providerValues = new Set<CrawlProvider>(providerOptions.map((option) => option.value))
+
 type FormErrors = Record<string, string>
 
 function isFilled(value: string) {
@@ -92,7 +96,9 @@ function isFilled(value: string) {
 function orderProviders(values: CrawlProvider[]) {
   const order = new Map(providerOptions.map((option, index) => [option.value, index]))
 
-  return [...values].sort((left, right) => (order.get(left) ?? 0) - (order.get(right) ?? 0))
+  return [...new Set(values)]
+    .filter((value) => providerValues.has(value))
+    .sort((left, right) => (order.get(left) ?? 0) - (order.get(right) ?? 0))
 }
 
 export const useHomeSearchStore = defineStore('home-search', () => {
@@ -281,15 +287,17 @@ export const useHomeSearchStore = defineStore('home-search', () => {
     clearCurrentResults()
     clearCurrentTracking()
 
-    if (!validateForm()) {
+    const providers = orderProviders(options.providers ?? selectedProviders.value)
+
+    if (!validateForm() || providers.length === 0) {
       return null
     }
 
     isSubmitting.value = true
 
     try {
-      if (selectedProviders.value.length === 1) {
-        const providerValue = selectedProviders.value[0]!
+      if (providers.length === 1 && !options.preferBatch) {
+        const providerValue = providers[0]!
         const response = await queueCrawler(
           providerValue,
           buildProviderPayload(providerValue, options.providerOptions),
@@ -305,15 +313,14 @@ export const useHomeSearchStore = defineStore('home-search', () => {
         }
       }
 
-      const response = await queueCrawlerBatch(
-        {
-          cidade: city.value.trim(),
-          uf: selectedState.value?.code ?? '',
-          providers: selectedProviders.value,
-          providerOptions: options.providerOptions,
-        },
-        token,
-      )
+      const payload = {
+        cidade: city.value.trim(),
+        uf: selectedState.value?.code ?? '',
+        providers,
+        ...(options.providerOptions ? { providerOptions: options.providerOptions } : {}),
+      } satisfies Parameters<typeof queueCrawlerBatch>[0]
+
+      const response = await queueCrawlerBatch(payload, token)
 
       currentBatchId.value = response.batchId
       createQueuedBatchSnapshot(response)

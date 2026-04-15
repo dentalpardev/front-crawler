@@ -141,38 +141,42 @@ export type OdontoprevPayload = {
   nomeDentista?: string
   acessibilidade?: string
   idioma?: string
+  forceRefresh?: boolean
 }
 
 export type HapvidaPayload = {
   cidade: string
   uf: string
-  tipoContrato: string
-  produto: string
-  servico: string
-  especialidade: string
+  tipoContrato?: string
+  produto?: string
+  servico?: string
+  especialidade?: string
   bairro?: string
+  forceRefresh?: boolean
 }
 
 export type SulamericaPayload = {
   cidade: string
   uf: string
-  produto: string
-  plano: string
+  produto?: string
+  plano?: string
   bairro?: string
   area?: string
   horarioInicial?: string
   horarioFinal?: string
+  forceRefresh?: boolean
 }
 
 export type AmilPayload = {
   cidade: string
   uf: string
-  codigoRede: string
+  codigoRede?: string
   codigoPlano?: string
   identificacao?: string
-  bairro: string
-  tipoServico: string
-  especialidade: string
+  bairro?: string
+  tipoServico?: string
+  especialidade?: string
+  forceRefresh?: boolean
 }
 
 export type OdontoprevProviderOptions = Omit<OdontoprevPayload, 'cidade' | 'uf'>
