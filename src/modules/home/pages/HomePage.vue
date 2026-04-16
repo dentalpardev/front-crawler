@@ -1340,6 +1340,23 @@ async function handleRetryProviderCatalog(provider: CrawlProvider) {
 
 function handleOpenProviderPanel(provider: CrawlProvider) {
   activeProviderPanel.value = provider
+
+  if (provider === 'odontoprev') {
+    void loadOdontoprevCatalog()
+  }
+
+  if (provider === 'hapvida') {
+    void loadHapvidaContractTypeOptions()
+  }
+
+  if (provider === 'amil') {
+    void loadAmilPlanOptions()
+  }
+
+  if (provider === 'sulamerica') {
+    void loadSulamericaProductOptions()
+    void loadSulamericaHourOptions()
+  }
 }
 
 function validateProviderFilters() {
@@ -1636,7 +1653,7 @@ function normalizeSpecialtyLabel(specialty: DentistSpecialty) {
     return specialty
   }
 
-  return specialty.nome ?? specialty.descricao ?? ''
+  return specialty.descricaoEspecialidade ?? ''
 }
 
 function getDentistSpecialties(dentist: (typeof displayDentists.value)[number]) {
@@ -1663,6 +1680,24 @@ function hasDentistQualificationLegends(dentist: (typeof displayDentists.value)[
   return buildDentistLegendIcons(dentist).length > 0
 }
 
+function formatBoolean(value: boolean | null | undefined) {
+  return value ? 'Sim' : 'Nao'
+}
+
+function formatCnpj(value: string | null) {
+  if (!value) {
+    return ''
+  }
+
+  const digits = value.replace(/\D/g, '')
+
+  if (digits.length !== 14) {
+    return value
+  }
+
+  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`
+}
+
 function exportDentistsAsCsv() {
   if (typeof window === 'undefined' || displayDentists.value.length === 0) {
     return
@@ -1671,21 +1706,36 @@ function exportDentistsAsCsv() {
   const headers = [
     'provider',
     'nome',
-    'area',
     'nome_fantasia',
     'cro',
-    'telefone',
-    'whatsapp',
-    'email',
-    'logradouro',
-    'bairro',
-    'cidade',
-    'uf',
-    'especialidades',
+    'cnpj',
     'tipo_pessoa',
     'tipo_prestador',
-    'acessibilidade',
+    'area',
+    'telefone',
+    'whatsapp',
+    'atende_whatsapp',
+    'email',
     'perfil_url',
+    'logradouro',
+    'bairro',
+    'cep',
+    'cidade',
+    'uf',
+    'latitude',
+    'longitude',
+    'especialidades',
+    'titulo_especialista',
+    'pos_graduacao',
+    'mestrado',
+    'doutorado',
+    'residencia',
+    'qualidade_monitorada',
+    'programa_acreditacao',
+    'certificacao_iso9001',
+    'certificacoes_entidades_gestoras',
+    'comunicacao_eventos_adversos',
+    'acessibilidade_cadeirante',
   ]
 
   const escapeValue = (value: string | number | boolean | null | undefined) =>
@@ -1695,21 +1745,36 @@ function exportDentistsAsCsv() {
     [
       formatProviderLabel(dentist.provider),
       dentist.nome,
-      dentist.area,
       dentist.nomeFantasia,
       dentist.cro,
-      dentist.telefone,
-      dentist.whatsapp,
-      dentist.email,
-      dentist.logradouro,
-      dentist.bairro,
-      dentist.cidade,
-      dentist.uf,
-      getDentistSpecialties(dentist).join(' | '),
+      formatCnpj(dentist.cnpj),
       formatProfessionalType(dentist.tipoPessoa),
       dentist.tipoPrestador,
-      dentist.acessibilidadeCadeirante,
+      dentist.area,
+      dentist.telefone,
+      dentist.whatsapp,
+      formatBoolean(dentist.atendeWhatsapp),
+      dentist.email,
       dentist.boaconsultaUrl,
+      dentist.logradouro,
+      dentist.bairro,
+      dentist.cep,
+      dentist.cidade,
+      dentist.uf,
+      dentist.latitude,
+      dentist.longitude,
+      getDentistSpecialties(dentist).join(' | '),
+      formatBoolean(dentist.tituloEspecialista || dentist.possuiTituloEspecialidade),
+      formatBoolean(dentist.posGraduadoLatoSenso),
+      formatBoolean(dentist.mestrado),
+      formatBoolean(dentist.doutoradoPosGraduacao),
+      formatBoolean(dentist.residencia),
+      formatBoolean(dentist.qualidadeMonitorada),
+      formatBoolean(dentist.programaAcreditacao),
+      formatBoolean(dentist.certificacaoIso9001),
+      formatBoolean(dentist.certificacoesEntidadesGestoras),
+      formatBoolean(dentist.comunicacaoEventosAdversos),
+      formatBoolean(dentist.acessibilidadeCadeirante),
     ]
       .map(escapeValue)
       .join(','),

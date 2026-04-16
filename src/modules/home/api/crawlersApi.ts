@@ -69,8 +69,8 @@ export type CrawlBatchResponse = {
 export type DentistSpecialty =
   | string
   | {
-      nome?: string | null
-      descricao?: string | null
+      codigoEspecialidade?: string | number | null
+      descricaoEspecialidade?: string | null
       [key: string]: unknown
     }
 
