@@ -17,6 +17,7 @@ import { useRouter } from 'vue-router'
 
 import { useAuthStore } from '@/modules/auth/store'
 import { isApiError } from '@/shared/api'
+import { trimValue } from '@/shared/utils'
 import type { CrawlBatchStatus, CrawlJobStatus, CrawlProvider } from '@/shared/types'
 import { AppTopbar } from '@/shared/ui'
 import {
@@ -42,7 +43,6 @@ import {
 import type {
   AmilPlanOption,
   AmilProviderOptions,
-  DentistSpecialty,
   HapvidaProviderOptions,
   MunicipalityOption,
   OdontoprevProviderOptions,
@@ -51,6 +51,19 @@ import type {
   SulamericaProviderOptions,
 } from '../api'
 import { useHomeSearchStore } from '../store'
+import {
+  buildDentistHighlights,
+  buildDentistLegendIcons,
+  exportDentistsAsCsv as downloadDentistsCsv,
+  formatDentistCount,
+  formatProviderLabel,
+  formatStatusLabel,
+  getDentistAddress,
+  getDentistAreas,
+  getDentistSpecialties,
+  hasDentistMetadata,
+  hasDentistQualificationLegends,
+} from '../utils'
 
 const router = useRouter()
 const toast = useToast()
@@ -90,11 +103,6 @@ const {
 } = storeToRefs(homeSearchStore)
 
 type ProviderFieldErrors = Partial<Record<string, string>>
-
-type DentistLegendIcon = {
-  code: string
-  label: string
-}
 
 type StartCrawlUiOptions = {
   forceRefresh?: boolean
@@ -522,10 +530,6 @@ async function handleCatalogFailure(
     summary: message,
     life: 4000,
   })
-}
-
-function trimValue(value: string) {
-  return value.trim()
 }
 
 async function loadMunicipalityOptions(stateCode: string) {
@@ -1514,35 +1518,6 @@ function buildProviderOptionsPayload(options: StartCrawlUiOptions = {}): QueueBa
   return Object.keys(nextOptions).length > 0 ? nextOptions : undefined
 }
 
-function formatStatusLabel(status: CrawlBatchStatus | CrawlJobStatus | null | undefined) {
-  switch (status) {
-    case 'queued':
-      return 'Na fila'
-    case 'running':
-      return 'Coletando...'
-    case 'done':
-      return 'Concluida'
-    case 'failed':
-      return 'Falhou'
-    case 'partial_failed':
-      return 'Parcialmente concluida'
-    default:
-      return 'Sem coleta'
-  }
-}
-
-function formatDentistCount(total: number | null) {
-  if (total === null) {
-    return 'Contagem pendente'
-  }
-
-  return `${total} dentista${total === 1 ? '' : 's'}`
-}
-
-function formatProviderLabel(value: string) {
-  return providerOptions.find((option) => option.value === value)?.label ?? value
-}
-
 function getProviderTone(value: CrawlProvider) {
   if (value === 'odontoprev') {
     return 'provider-tone--odontoprev'
@@ -1559,241 +1534,12 @@ function getProviderTone(value: CrawlProvider) {
   return 'provider-tone--sulamerica'
 }
 
-function formatProfessionalType(value: string | null) {
-  if (!value) {
-    return ''
-  }
-
-  if (value === 'F') {
-    return 'Pessoa fisica'
-  }
-
-  if (value === 'J') {
-    return 'Pessoa juridica'
-  }
-
-  return value
-}
-
-function getDentistAddress(dentist: (typeof displayDentists.value)[number]) {
-  return [dentist.logradouro, dentist.bairro, `${dentist.cidade}, ${dentist.uf}`]
-    .filter((value) => Boolean(value))
-    .join(' • ')
-}
-
-function buildDentistHighlights(dentist: (typeof displayDentists.value)[number]) {
-  return [
-    dentist.cro ? `CRO ${dentist.cro}` : null,
-    formatProfessionalType(dentist.tipoPessoa),
-    dentist.tipoPrestador,
-  ].filter((value): value is string => Boolean(value))
-}
-
-function buildDentistLegendIcons(dentist: (typeof displayDentists.value)[number]): DentistLegendIcon[] {
-  return [
-    dentist.comunicacaoEventosAdversos
-      ? {
-          code: 'N',
-          label: 'Comunicacao de eventos adversos',
-        }
-      : null,
-    dentist.posGraduadoLatoSenso
-      ? {
-          code: 'P',
-          label: 'Profissional com especializacao',
-        }
-      : null,
-    dentist.residencia
-      ? {
-          code: 'R',
-          label: 'Profissional com residencia',
-        }
-      : null,
-    dentist.tituloEspecialista || dentist.possuiTituloEspecialidade
-      ? {
-          code: 'E',
-          label: 'Titulo de especialista',
-        }
-      : null,
-    dentist.qualidadeMonitorada
-      ? {
-          code: 'Q',
-          label: 'Qualidade monitorada',
-        }
-      : null,
-    dentist.programaAcreditacao
-      ? {
-          code: 'A',
-          label: 'Programa de acreditacao',
-        }
-      : null,
-    dentist.certificacoesEntidadesGestoras
-      ? {
-          code: 'G',
-          label: 'Certificacoes de entidades gestoras',
-        }
-      : null,
-    dentist.certificacaoIso9001
-      ? {
-          code: 'I',
-          label: 'Certificacao ISO 9001',
-        }
-      : null,
-    dentist.doutoradoPosGraduacao
-      ? {
-          code: 'D',
-          label: 'Profissional com doutorado ou pos-doutorado',
-        }
-      : null,
-  ].filter((value): value is DentistLegendIcon => Boolean(value))
-}
-
-function normalizeSpecialtyLabel(specialty: DentistSpecialty) {
-  if (typeof specialty === 'string') {
-    return specialty
-  }
-
-  return specialty.descricaoEspecialidade ?? ''
-}
-
-function getDentistSpecialties(dentist: (typeof displayDentists.value)[number]) {
-  return dentist.especialidades
-    .map((specialty) => normalizeSpecialtyLabel(specialty))
-    .filter((value): value is string => Boolean(value))
-}
-
-function getDentistAreas(dentist: (typeof displayDentists.value)[number]) {
-  return String(dentist.area ?? '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter((value): value is string => Boolean(value))
-}
-
-function hasDentistMetadata(dentist: (typeof displayDentists.value)[number]) {
-  return (
-    buildDentistHighlights(dentist).length > 0 ||
-    dentist.acessibilidadeCadeirante
-  )
-}
-
-function hasDentistQualificationLegends(dentist: (typeof displayDentists.value)[number]) {
-  return buildDentistLegendIcons(dentist).length > 0
-}
-
-function formatBoolean(value: boolean | null | undefined) {
-  return value ? 'Sim' : 'Nao'
-}
-
-function formatCnpj(value: string | null) {
-  if (!value) {
-    return ''
-  }
-
-  const digits = value.replace(/\D/g, '')
-
-  if (digits.length !== 14) {
-    return value
-  }
-
-  return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`
-}
-
 function exportDentistsAsCsv() {
-  if (typeof window === 'undefined' || displayDentists.value.length === 0) {
-    return
-  }
-
-  const headers = [
-    'provider',
-    'nome',
-    'nome_fantasia',
-    'cro',
-    'cnpj',
-    'tipo_pessoa',
-    'tipo_prestador',
-    'area',
-    'telefone',
-    'whatsapp',
-    'atende_whatsapp',
-    'email',
-    'perfil_url',
-    'logradouro',
-    'bairro',
-    'cep',
-    'cidade',
-    'uf',
-    'latitude',
-    'longitude',
-    'especialidades',
-    'titulo_especialista',
-    'pos_graduacao',
-    'mestrado',
-    'doutorado',
-    'residencia',
-    'qualidade_monitorada',
-    'programa_acreditacao',
-    'certificacao_iso9001',
-    'certificacoes_entidades_gestoras',
-    'comunicacao_eventos_adversos',
-    'acessibilidade_cadeirante',
-  ]
-
-  const escapeValue = (value: string | number | boolean | null | undefined) =>
-    `"${String(value ?? '').replace(/"/g, '""')}"`
-
-  const rows = displayDentists.value.map((dentist) =>
-    [
-      formatProviderLabel(dentist.provider),
-      dentist.nome,
-      dentist.nomeFantasia,
-      dentist.cro,
-      formatCnpj(dentist.cnpj),
-      formatProfessionalType(dentist.tipoPessoa),
-      dentist.tipoPrestador,
-      dentist.area,
-      dentist.telefone,
-      dentist.whatsapp,
-      formatBoolean(dentist.atendeWhatsapp),
-      dentist.email,
-      dentist.boaconsultaUrl,
-      dentist.logradouro,
-      dentist.bairro,
-      dentist.cep,
-      dentist.cidade,
-      dentist.uf,
-      dentist.latitude,
-      dentist.longitude,
-      getDentistSpecialties(dentist).join(' | '),
-      formatBoolean(dentist.tituloEspecialista || dentist.possuiTituloEspecialidade),
-      formatBoolean(dentist.posGraduadoLatoSenso),
-      formatBoolean(dentist.mestrado),
-      formatBoolean(dentist.doutoradoPosGraduacao),
-      formatBoolean(dentist.residencia),
-      formatBoolean(dentist.qualidadeMonitorada),
-      formatBoolean(dentist.programaAcreditacao),
-      formatBoolean(dentist.certificacaoIso9001),
-      formatBoolean(dentist.certificacoesEntidadesGestoras),
-      formatBoolean(dentist.comunicacaoEventosAdversos),
-      formatBoolean(dentist.acessibilidadeCadeirante),
-    ]
-      .map(escapeValue)
-      .join(','),
-  )
-
-  const csv = [headers.join(','), ...rows].join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  const fileName = `dentistas-${selectedProviders.value.join('-')}-${city.value
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '-') || 'busca'}.csv`
-
-  link.href = url
-  link.download = fileName
-  link.click()
-
-  URL.revokeObjectURL(url)
+  downloadDentistsCsv({
+    dentists: displayDentists.value,
+    providers: selectedProviders.value,
+    city: city.value,
+  })
 }
 
 async function loadResultsForCurrentSearch(force = false) {
