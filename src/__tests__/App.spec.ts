@@ -9,6 +9,18 @@ import AppShell from '@/app/AppShell.vue'
 import { primeVueOptions } from '@/app/primevue'
 import { createAppRouter } from '@/app/router'
 
+function toBase64Url(value: string): string {
+  return window.btoa(value).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/u, '')
+}
+
+function createJwt(payload: Record<string, unknown>): string {
+  return [
+    toBase64Url(JSON.stringify({ alg: 'RS256', typ: 'JWT' })),
+    toBase64Url(JSON.stringify(payload)),
+    'signature',
+  ].join('.')
+}
+
 describe('App shell', () => {
   beforeEach(() => {
     window.localStorage.clear()
@@ -62,6 +74,34 @@ describe('App shell', () => {
 
     expect(router.currentRoute.value.name).toBe('login')
     expect(router.currentRoute.value.query.redirect).toBe('/')
+  })
+
+  it('expires persisted JWT sessions before entering protected routes', async () => {
+    window.localStorage.setItem(
+      'dentalpar-auth-session',
+      JSON.stringify({
+        email: 'user@example.com',
+        token: createJwt({ exp: Math.floor((Date.now() - 60_000) / 1000) }),
+      }),
+    )
+
+    const pinia = createPinia()
+    const router = createAppRouter(pinia)
+
+    await router.push('/')
+    await router.isReady()
+
+    const wrapper = mount(AppShell, {
+      global: {
+        plugins: [pinia, [PrimeVue, primeVueOptions], ToastService, router],
+      },
+    })
+
+    expect(router.currentRoute.value.name).toBe('login')
+    expect(router.currentRoute.value.query.redirect).toBe('/')
+    expect(router.currentRoute.value.query.expired).toBe('1')
+    expect(window.localStorage.getItem('dentalpar-auth-session')).toBeNull()
+    expect(wrapper.text()).toContain('Sua sessao expirou. Faca login novamente.')
   })
 
   it('redirects authenticated users away from guest-only routes', async () => {

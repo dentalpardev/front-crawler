@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import { Form } from '@primevue/forms'
 import type { FormFieldState, FormSubmitEvent } from '@primevue/forms/form'
@@ -33,6 +33,9 @@ const authStore = useAuthStore()
 const isSubmitting = ref(false)
 const submitError = ref('')
 const serverErrors = ref<Partial<Record<keyof LoginFormValues, string>>>({})
+const sessionExpiredMessage = computed(() =>
+  route.query.expired === '1' ? 'Sua sessao expirou. Faca login novamente.' : '',
+)
 
 const resolver = ({ values }: { values: Record<string, unknown> }) => {
   const formValues = values as LoginFormValues
@@ -106,6 +109,10 @@ async function handleSubmit(event: FormSubmitEvent<Record<string, unknown>>) {
         class="login-form"
         @submit="handleSubmit"
       >
+        <Message v-if="sessionExpiredMessage" severity="warn" variant="simple">
+          {{ sessionExpiredMessage }}
+        </Message>
+
         <Message v-if="submitError" severity="error" variant="simple">
           {{ submitError }}
         </Message>

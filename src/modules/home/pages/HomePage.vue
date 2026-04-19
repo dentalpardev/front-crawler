@@ -558,7 +558,9 @@ function isProviderPanelActive(provider: CrawlProvider) {
 }
 
 async function handleRetryProviderCatalog(provider: CrawlProvider) {
-  if (!authStore.token || isProviderCatalogLoading(provider)) {
+  const token = await getActiveAuthToken()
+
+  if (!token || isProviderCatalogLoading(provider)) {
     return
   }
 
@@ -697,8 +699,30 @@ function exportDentistsAsCsv() {
   })
 }
 
+async function redirectToExpiredSessionLogin(): Promise<void> {
+  await router.push({
+    path: '/login',
+    query: {
+      redirect: router.currentRoute.value.fullPath,
+      expired: '1',
+    },
+  })
+}
+
+async function getActiveAuthToken(): Promise<string | null> {
+  if (authStore.ensureActiveSession()) {
+    return authStore.token
+  }
+
+  await redirectToExpiredSessionLogin()
+
+  return null
+}
+
 async function loadResultsForCurrentSearch(force = false) {
-  if (!authStore.token) {
+  const token = await getActiveAuthToken()
+
+  if (!token) {
     return
   }
 
@@ -712,7 +736,7 @@ async function loadResultsForCurrentSearch(force = false) {
     }
 
     try {
-      await homeSearchStore.refreshCurrentBatchDentists(authStore.token, currentBatch.value.batchId)
+      await homeSearchStore.refreshCurrentBatchDentists(token, currentBatch.value.batchId)
     } catch (error) {
       if (await handleUnauthorized(error)) {
         return
@@ -736,7 +760,7 @@ async function loadResultsForCurrentSearch(force = false) {
     }
 
     try {
-      await homeSearchStore.refreshCurrentDentists(authStore.token, currentJob.value.jobId)
+      await homeSearchStore.refreshCurrentDentists(token, currentJob.value.jobId)
     } catch (error) {
       if (await handleUnauthorized(error)) {
         return
@@ -758,7 +782,7 @@ async function handleUnauthorized(error: unknown) {
     return false
   }
 
-  authStore.logout()
+  authStore.logout('expired')
 
   toast.add({
     severity: 'warn',
@@ -766,7 +790,7 @@ async function handleUnauthorized(error: unknown) {
     life: 3500,
   })
 
-  await router.push('/login')
+  await redirectToExpiredSessionLogin()
 
   return true
 }
@@ -866,10 +890,9 @@ function shouldRetryWithoutProvider(error: unknown, options: StartCrawlUiOptions
 }
 
 async function submitSearch(options: StartCrawlUiOptions = {}): Promise<SearchSubmissionResult> {
-  const token = authStore.token
+  const token = await getActiveAuthToken()
 
   if (!token) {
-    await router.push('/login')
     return null
   }
 
@@ -929,8 +952,9 @@ async function retrySearchWithoutProvider(provider: CrawlProvider, options: Star
 }
 
 async function handleStartCrawl(options: StartCrawlUiOptions = {}) {
-  if (!authStore.token) {
-    await router.push('/login')
+  const token = await getActiveAuthToken()
+
+  if (!token) {
     return
   }
 
@@ -990,18 +1014,20 @@ async function handleRetrySearch() {
 }
 
 async function refreshCurrentStatus() {
-  if (!authStore.token) {
+  const token = await getActiveAuthToken()
+
+  if (!token) {
     return
   }
 
   try {
     if (currentBatchId.value) {
-      await homeSearchStore.refreshCurrentBatch(authStore.token)
+      await homeSearchStore.refreshCurrentBatch(token)
       return
     }
 
     if (currentJobId.value) {
-      await homeSearchStore.refreshCurrentJob(authStore.token)
+      await homeSearchStore.refreshCurrentJob(token)
     }
   } catch (error) {
     if (await handleUnauthorized(error)) {

@@ -13,17 +13,20 @@ export const appRoutes: RouteRecordRaw[] = [...homeRoutes, ...authRoutes]
 function installAuthGuards(router: ReturnType<typeof createRouter>, pinia: Pinia) {
   router.beforeEach((to) => {
     const authStore = useAuthStore(pinia)
+    const isExpiredSession = authStore.isSessionExpired
+    const hasActiveSession = authStore.ensureActiveSession()
 
-    if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+    if (to.meta.requiresAuth && !hasActiveSession) {
       return {
         name: LOGIN_ROUTE_NAME,
         query: {
           redirect: to.fullPath,
+          ...(isExpiredSession ? { expired: '1' } : {}),
         },
       }
     }
 
-    if (to.meta.guestOnly && authStore.isAuthenticated) {
+    if (to.meta.guestOnly && hasActiveSession) {
       return {
         name: HOME_ROUTE_NAME,
       }
