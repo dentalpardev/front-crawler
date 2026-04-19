@@ -1,3 +1,6 @@
+/**
+ * Dispara o download de um conteudo textual no navegador.
+ */
 export function downloadTextFile(content: string, fileName: string, mimeType: string): void {
   if (typeof window === 'undefined') {
     return

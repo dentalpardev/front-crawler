@@ -1,7 +1,13 @@
+/**
+ * Formata booleanos para textos curtos usados em UI e exportacoes.
+ */
 export function formatBoolean(value: boolean | null | undefined): string {
   return value ? 'Sim' : 'Nao'
 }
 
+/**
+ * Aplica mascara de CNPJ quando o valor possui 14 digitos; caso contrario, preserva a entrada.
+ */
 export function formatCnpj(value: string | null): string {
   if (!value) {
     return ''

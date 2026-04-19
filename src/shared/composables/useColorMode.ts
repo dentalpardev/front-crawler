@@ -1,14 +1,20 @@
-import { ref } from 'vue'
+import { ref, type Ref } from 'vue'
 
 const COLOR_MODE_STORAGE_KEY = 'dentalpar-color-mode'
 
-function getSystemPreference() {
+type ColorModeControls = {
+  isDarkMode: Ref<boolean>
+  setColorMode: (enabled: boolean) => void
+  toggleColorMode: () => void
+}
+
+function getSystemPreference(): boolean {
   return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
     ? window.matchMedia('(prefers-color-scheme: dark)').matches
     : false
 }
 
-function getStoredPreference() {
+function getStoredPreference(): 'dark' | 'light' | null {
   if (typeof window === 'undefined') {
     return null
   }
@@ -22,13 +28,13 @@ function getStoredPreference() {
   return null
 }
 
-function hasDarkClass() {
+function hasDarkClass(): boolean {
   return typeof document !== 'undefined'
     ? document.documentElement.classList.contains('app-dark')
     : false
 }
 
-function applyColorMode(enabled: boolean) {
+function applyColorMode(enabled: boolean): void {
   if (typeof document === 'undefined') {
     return
   }
@@ -40,7 +46,7 @@ const isDarkMode = ref(false)
 let isInitialized = false
 let mediaQueryList: MediaQueryList | null = null
 
-function initializeColorMode() {
+function initializeColorMode(): void {
   if (isInitialized) {
     return
   }
@@ -72,7 +78,7 @@ function initializeColorMode() {
   isInitialized = true
 }
 
-function setColorMode(enabled: boolean) {
+function setColorMode(enabled: boolean): void {
   isDarkMode.value = enabled
   applyColorMode(enabled)
 
@@ -81,10 +87,10 @@ function setColorMode(enabled: boolean) {
   }
 }
 
-export function useColorMode() {
+export function useColorMode(): ColorModeControls {
   initializeColorMode()
 
-  function toggleColorMode() {
+  function toggleColorMode(): void {
     setColorMode(!isDarkMode.value)
   }
 

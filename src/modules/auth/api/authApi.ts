@@ -41,28 +41,28 @@ export type ResetPasswordResponse = {
   message: string
 }
 
-export function loginUser(payload: LoginPayload) {
+export function loginUser(payload: LoginPayload): Promise<LoginResponse> {
   return apiRequest<LoginResponse>('/auth/login', {
     body: payload,
     method: 'POST',
   })
 }
 
-export function registerUser(payload: RegisterPayload) {
+export function registerUser(payload: RegisterPayload): Promise<RegisteredUser> {
   return apiRequest<RegisteredUser>('/users/register', {
     body: payload,
     method: 'POST',
   })
 }
 
-export function forgotPassword(payload: ForgotPasswordPayload) {
+export function forgotPassword(payload: ForgotPasswordPayload): Promise<ForgotPasswordResponse> {
   return apiRequest<ForgotPasswordResponse>('/auth/forgot-password', {
     body: payload,
     method: 'POST',
   })
 }
 
-export function resetPassword(payload: ResetPasswordPayload) {
+export function resetPassword(payload: ResetPasswordPayload): Promise<ResetPasswordResponse> {
   return apiRequest<ResetPasswordResponse>('/auth/reset-password', {
     body: payload,
     method: 'POST',

@@ -1,14 +1,32 @@
-import { computed, ref } from 'vue'
+import { computed, ref, type ComputedRef, type Ref } from 'vue'
 
 import { defineStore } from 'pinia'
 
-import { loginUser, registerUser, type LoginPayload, type RegisterPayload } from '../api'
+import {
+  loginUser,
+  registerUser,
+  type LoginPayload,
+  type LoginResponse,
+  type RegisteredUser,
+  type RegisterPayload,
+} from '../api'
 
 const AUTH_STORAGE_KEY = 'dentalpar-auth-session'
 
 type AuthSession = {
   email: string
   token: string
+}
+
+type AuthStoreState = {
+  isAuthenticated: ComputedRef<boolean>
+  session: Ref<AuthSession | null>
+  token: ComputedRef<string | null>
+  userEmail: ComputedRef<string>
+  setSession: (nextSession: AuthSession) => void
+  login: (credentials: LoginPayload) => Promise<LoginResponse>
+  register: (payload: RegisterPayload) => Promise<RegisteredUser>
+  logout: () => void
 }
 
 function normalizeSession(session: unknown): AuthSession | null {
@@ -26,7 +44,7 @@ function normalizeSession(session: unknown): AuthSession | null {
   return { email, token }
 }
 
-function readStoredSession() {
+function readStoredSession(): AuthSession | null {
   if (typeof window === 'undefined') {
     return null
   }
@@ -52,14 +70,14 @@ function readStoredSession() {
   }
 }
 
-export const useAuthStore = defineStore('auth', () => {
+export const useAuthStore = defineStore('auth', (): AuthStoreState => {
   const session = ref<AuthSession | null>(readStoredSession())
 
   const isAuthenticated = computed(() => Boolean(session.value?.token))
   const token = computed(() => session.value?.token ?? null)
   const userEmail = computed(() => session.value?.email ?? '')
 
-  async function login(credentials: LoginPayload) {
+  async function login(credentials: LoginPayload): Promise<LoginResponse> {
     const response = await loginUser(credentials)
 
     const nextSession = normalizeSession({
@@ -80,7 +98,7 @@ export const useAuthStore = defineStore('auth', () => {
     return response
   }
 
-  function setSession(nextSession: AuthSession) {
+  function setSession(nextSession: AuthSession): void {
     const normalizedSession = normalizeSession(nextSession)
 
     if (!normalizedSession) {
@@ -95,11 +113,11 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  async function register(payload: RegisterPayload) {
+  async function register(payload: RegisterPayload): Promise<RegisteredUser> {
     return registerUser(payload)
   }
 
-  function logout() {
+  function logout(): void {
     session.value = null
 
     if (typeof window !== 'undefined') {

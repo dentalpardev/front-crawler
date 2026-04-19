@@ -15,7 +15,7 @@ type ApiErrorPayload = {
   message?: string
 }
 
-function getApiBaseUrl() {
+function getApiBaseUrl(): string {
   return (import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(/\/$/, '')
 }
 
@@ -38,7 +38,7 @@ function getErrorMessage(
   payload: ApiErrorPayload | null,
   validationErrors: ApiValidationErrors,
   status: number,
-) {
+): string {
   if (Object.keys(validationErrors).length > 0) {
     return Object.values(validationErrors)[0] ?? 'Falha de validacao.'
   }
@@ -74,7 +74,7 @@ export function isApiError(error: unknown): error is ApiError {
   return error instanceof ApiError
 }
 
-export async function apiRequest<T>(path: string, options: RequestOptions = {}) {
+export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers = new Headers(options.headers)
 
   if (!headers.has('Accept')) {
