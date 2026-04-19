@@ -43,6 +43,9 @@ function escapeCsvValue(value: string | number | boolean | null | undefined): st
   return `"${String(value ?? '').replace(/"/g, '""')}"`
 }
 
+/**
+ * Serializa a lista de dentistas no formato CSV usado pelo botao de exportacao.
+ */
 export function buildDentistsCsv(dentists: JobDentist[]): string {
   const rows = dentists.map((dentist) =>
     [
@@ -86,12 +89,18 @@ export function buildDentistsCsv(dentists: JobDentist[]): string {
   return [dentistCsvHeaders.join(','), ...rows].join('\n')
 }
 
+/**
+ * Gera um nome de arquivo estavel para a exportacao atual de dentistas.
+ */
 export function buildDentistsCsvFileName(providers: CrawlProvider[], city: string): string {
   const normalizedCity = trimValue(city).toLowerCase().replace(/\s+/g, '-') || 'busca'
 
   return `dentistas-${providers.join('-')}-${normalizedCity}.csv`
 }
 
+/**
+ * Exporta os dentistas exibidos em CSV, sem produzir arquivo quando a lista esta vazia.
+ */
 export function exportDentistsAsCsv(params: {
   dentists: JobDentist[]
   providers: CrawlProvider[]

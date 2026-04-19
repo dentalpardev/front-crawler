@@ -89,11 +89,11 @@ const providerValues = new Set<CrawlProvider>(providerOptions.map((option) => op
 
 type FormErrors = Record<string, string>
 
-function isFilled(value: string) {
+function isFilled(value: string): boolean {
   return value.trim().length > 0
 }
 
-function orderProviders(values: CrawlProvider[]) {
+function orderProviders(values: CrawlProvider[]): CrawlProvider[] {
   const order = new Map(providerOptions.map((option, index) => [option.value, index]))
 
   return [...new Set(values)]
