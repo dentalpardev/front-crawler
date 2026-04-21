@@ -50,6 +50,17 @@ describe('dentists CSV export helpers', () => {
     expect(csv).toContain('"Sim"')
   })
 
+  it('pads missing leading zeros when exporting malformed CNPJ values', () => {
+    const csv = buildDentistsCsv([
+      {
+        ...dentist,
+        cnpj: '9061782000143',
+      },
+    ])
+
+    expect(csv).toContain('"09.061.782/0001-43"')
+  })
+
   it('builds file names from selected providers and city', () => {
     expect(buildDentistsCsvFileName(['odontoprev', 'sulamerica'], 'Sao Paulo')).toBe(
       'dentistas-odontoprev-sulamerica-sao-paulo.csv',

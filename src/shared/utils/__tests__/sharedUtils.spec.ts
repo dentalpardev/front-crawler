@@ -14,9 +14,11 @@ describe('shared utils', () => {
     expect(formatBoolean(undefined)).toBe('Nao')
   })
 
-  it('formats CNPJ values when they have fourteen digits', () => {
+  it('formats CNPJ values when they have fourteen digits or missing leading zeros', () => {
     expect(formatCnpj('12345678000190')).toBe('12.345.678/0001-90')
     expect(formatCnpj('12.345.678/0001-90')).toBe('12.345.678/0001-90')
+    expect(formatCnpj('9061782000143')).toBe('09.061.782/0001-43')
+    expect(formatCnpj('230105000137')).toBe('00.230.105/0001-37')
     expect(formatCnpj('123')).toBe('123')
     expect(formatCnpj(null)).toBe('')
   })
